@@ -20,4 +20,4 @@ requires = ["hatchling", "pathspec<0.13"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["transfection"]
+packages = ["src/transfection"]
