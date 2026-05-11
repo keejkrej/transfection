@@ -15,12 +15,13 @@ import typer
 from transfection.analysis.roi import load_timeseries_csv
 from transfection.analysis.trace_fluor import trace_color_alpha_from_fluor_name
 
-from . import auc, paths
+from . import auc, paths, plot_layout
 from .slide_labels import infer_workspace_for_timeseries_dir, load_slide_channel_labels
 
 HELP = (
     f"Plot every metrics CSV in a {paths.TIMESERIES_DIRNAME}/ folder as subplots in two PNGs "
     f"(default: sibling {paths.RESULTS_DIRNAME}/traces.png and traces_shared_y.png). "
+    "X axis is frame index times --interval (minutes per frame). "
     "Y limits use 1–99% percentiles of corrected intensity per panel; the second figure uses one "
     "y range (min of panel 1% values, max of panel 99% values)."
 )
@@ -29,12 +30,15 @@ HELP = (
 def run_plot_timeseries(
     timeseries_csvs: list[Path],
     *,
+    interval: float,
     output: Path | None,
     results_dir: Path | None,
     columns: int,
-    title: str | None,
     slide_channel_names: dict[int, str],
 ) -> tuple[Path, Path]:
+    if interval <= 0:
+        raise ValueError(f"--interval must be > 0, got {interval}")
+
     resolved_csvs = sorted((csv_path.resolve() for csv_path in timeseries_csvs), key=lambda path: path.name)
     resolved_output_plot = default_output_plot_path(resolved_csvs, output, results_dir=results_dir)
     resolved_shared_y_plot = unified_y_output_path(resolved_output_plot)
@@ -47,16 +51,16 @@ def run_plot_timeseries(
     write_subplot_grid(
         panels,
         resolved_output_plot,
+        interval=interval,
         ylim_fn=lambda i: panel_ylims[i],
-        title=title,
         columns=columns,
         slide_channel_names=slide_channel_names,
     )
     write_subplot_grid(
         panels,
         resolved_shared_y_plot,
+        interval=interval,
         ylim_fn=lambda _i: (unified_low, unified_high),
-        title=title,
         columns=columns,
         slide_channel_names=slide_channel_names,
     )
@@ -142,13 +146,13 @@ def write_subplot_grid(
     panels: list[tuple[Path, pd.DataFrame]],
     output_plot: Path,
     *,
+    interval: float,
     ylim_fn: Callable[[int], tuple[float, float]],
-    title: str | None,
     columns: int,
     slide_channel_names: dict[int, str],
 ) -> None:
     rows = math.ceil(len(panels) / columns)
-    fig, axes = plt.subplots(rows, columns, squeeze=False)
+    fig, axes = plt.subplots(rows, columns, squeeze=False, figsize=plot_layout.FIGURE_SIZE_IN)
     axes_flat = axes.flatten()
 
     for index, (ax, (csv_path, df)) in enumerate(zip(axes_flat, panels)):
@@ -157,9 +161,10 @@ def write_subplot_grid(
         )
         trace_groups = df.groupby(trace_group_columns(df), sort=True, dropna=False)
         for _, roi_df in trace_groups:
-            ax.plot(roi_df["t"], roi_df["corrected"], color=trace_color, alpha=trace_alpha)
+            t_minutes = roi_df["t"].astype(float).to_numpy(dtype=float) * interval
+            ax.plot(t_minutes, roi_df["corrected"], color=trace_color, alpha=trace_alpha)
         ax.set_title(subplot_title(csv_path, trace_groups.ngroups, slide_channel_names=slide_channel_names))
-        ax.set_xlabel("frame")
+        ax.set_xlabel("minutes")
         ax.set_ylabel("corrected intensity")
         y_low, y_high = ylim_fn(index)
         ax.set_ylim(y_low, y_high)
@@ -167,14 +172,10 @@ def write_subplot_grid(
     for ax in axes_flat[len(panels):]:
         ax.axis("off")
 
-    if title is not None:
-        fig.suptitle(title)
-        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
-    else:
-        fig.tight_layout()
+    fig.tight_layout()
 
     output_plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_plot)
+    fig.savefig(output_plot, dpi=plot_layout.FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -209,10 +210,11 @@ def cli(
         min=1,
         help="Number of subplot columns in the output grid.",
     ),
-    title: str | None = typer.Option(
-        None,
-        "--title",
-        help="Optional figure title.",
+    interval: float = typer.Option(
+        ...,
+        "--interval",
+        min=0.0,
+        help="Minutes per frame index in metrics CSVs; x axis is t * interval (same as auc/fit).",
     ),
 ) -> None:
     timeseries_csvs = paths.discover_timeseries_csvs(metrics_dir)
@@ -221,10 +223,10 @@ def cli(
     slide_channel_names = load_slide_channel_labels(workspace)
     resolved_output_plot, resolved_shared_y_plot = run_plot_timeseries(
         timeseries_csvs,
+        interval=interval,
         output=output,
         results_dir=None if output is not None else results_dir,
         columns=columns,
-        title=title,
         slide_channel_names=slide_channel_names,
     )
     print(format_written_timeseries_plot_message(resolved_output_plot))

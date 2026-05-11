@@ -14,7 +14,7 @@ import typer
 from transfection.analysis.roi import load_timeseries_csv
 from transfection.analysis.trace_fluor import trace_color_alpha_from_fluor_name
 
-from . import auc, plot_auc, plot_timeseries, paths
+from . import auc, plot_auc, plot_layout, plot_timeseries, paths
 from .slide_labels import (
     boxplot_tick_labels,
     boxplot_x_axis_label,
@@ -53,7 +53,6 @@ def run_plot_fit(
     df = load_fit_csv(resolved_fit_csv)
     output_paths = default_output_plot_paths(resolved_fit_csv, output)
     slide_channel_names = load_slide_channel_labels(infer_workspace_for_plot_csv(fit_csv))
-    axis_scope = boxplot_x_axis_label(slide_channel_names)
     written_paths: list[Path] = []
     for parameter, label in PLOTTED_PARAMETERS:
         write_fit_boxplot(
@@ -61,7 +60,6 @@ def run_plot_fit(
             parameter=parameter,
             ylabel=label,
             output_plot=output_paths[parameter],
-            title=f"{label} by {axis_scope}",
             slide_channel_names=slide_channel_names,
         )
         written_paths.append(output_paths[parameter])
@@ -136,7 +134,6 @@ def write_fit_boxplot(
     parameter: str,
     ylabel: str,
     output_plot: Path,
-    title: str | None,
     slide_channel_names: dict[int, str],
 ) -> None:
     parameter_df = df.dropna(subset=[parameter]).copy()
@@ -158,7 +155,7 @@ def write_fit_boxplot(
     if not use_log_scale:
         upper_limit = plot_auc.quartile_axis_upper(grouped_values)
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=plot_layout.FIGURE_SIZE_IN)
     ax.boxplot(
         grouped_values,
         tick_labels=boxplot_tick_labels(slide_channels, trace_counts, slide_channel_names),
@@ -170,11 +167,9 @@ def write_fit_boxplot(
         ax.set_yscale("log")
     else:
         ax.set_ylim(0.0, upper_limit)
-    if title is not None:
-        ax.set_title(title)
 
     output_plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_plot)
+    fig.savefig(output_plot, dpi=plot_layout.FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -202,7 +197,7 @@ def write_fitted_trace_grid(
     slide_channel_names: dict[int, str],
 ) -> None:
     rows = math.ceil(len(timeseries_csvs) / columns)
-    fig, axes = plt.subplots(rows, columns, squeeze=False)
+    fig, axes = plt.subplots(rows, columns, squeeze=False, figsize=plot_layout.FIGURE_SIZE_IN)
     axes_flat = axes.flatten()
     fit_lookup = (
         fit_df.loc[fit_df["success"]]
@@ -253,10 +248,9 @@ def write_fitted_trace_grid(
         plt.close(fig)
         raise ValueError("No successful fit rows matched the inferred timeseries CSVs")
 
-    fig.suptitle("Fitted traces by slide channel")
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
+    fig.tight_layout()
     output_plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_plot)
+    fig.savefig(output_plot, dpi=plot_layout.FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 

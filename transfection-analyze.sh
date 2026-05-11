@@ -142,7 +142,7 @@ cat << 'EOF'
 transfection analyze
 --------------------
 Runs in order: timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
-Analyze timeseries and fit share --jobs; fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
+Analyze timeseries and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
 Requires roi/Pos* and slide.json when generating timeseries.
 
 EOF
@@ -169,7 +169,7 @@ if [[ "$metric_count" -gt 0 ]]; then
   done
 fi
 
-interval="$(read_positive_double "Frame interval in minutes (for auc, fit, plot-fit):")"
+interval="$(read_positive_double "Frame interval in minutes (for plot-timeseries, auc, fit, plot-fit):")"
 
 echo "" >&2
 echo "Analyze timeseries & fit — set --jobs and (for fit) --max-onset-minutes (defaults from this script):" >&2
@@ -215,7 +215,7 @@ if [[ "$(get_timeseries_metrics_count "$workspace")" -lt 1 ]]; then
 fi
 
 set +e
-invoke_transfection_analyze plot-timeseries "$ts_dir"
+invoke_transfection_analyze plot-timeseries "$ts_dir" --interval "$interval"
 code=$?
 set -e
 exit_if_failed "$code" "analyze plot-timeseries"

@@ -154,7 +154,7 @@ Write-Host @"
 transfection analyze
 --------------------
 Runs in order: timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
-Analyze timeseries and fit share --jobs; fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
+Analyze timeseries and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
 Requires roi/Pos* and slide.json when generating timeseries.
 
 "@
@@ -185,7 +185,7 @@ if ($metricCount -gt 0) {
 }
 
 $correctionArgs = @()
-$interval = Read-RequiredPositiveDouble "Frame interval in minutes (for auc, fit, plot-fit)"
+$interval = Read-RequiredPositiveDouble "Frame interval in minutes (for plot-timeseries, auc, fit, plot-fit)"
 $intervalStr = $interval.ToString([System.Globalization.CultureInfo]::InvariantCulture)
 
 # Single-quoted literals: PS 5.1 misparses & and (--foo) inside double-quoted strings (PS 7 is fine).
@@ -225,7 +225,8 @@ if ((Get-TimeseriesMetricsCount $workspace) -lt 1) {
 }
 
 $code = Invoke-TransfectionAnalyze @(
-    "plot-timeseries", $tsDirForPlots
+    "plot-timeseries", $tsDirForPlots,
+    "--interval", $intervalStr
 )
 Exit-IfFailed $code "analyze plot-timeseries"
 

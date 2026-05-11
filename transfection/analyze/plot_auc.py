@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import typer
 
+from . import plot_layout
 from .slide_labels import (
     boxplot_tick_labels,
     boxplot_x_axis_label,
@@ -26,7 +27,6 @@ def run_plot_auc(
     auc_csv: Path,
     *,
     output: Path | None,
-    title: str | None,
     slide_channel_names: dict[int, str],
 ) -> Path:
     resolved_auc_csv = auc_csv.resolve()
@@ -35,7 +35,6 @@ def run_plot_auc(
     write_auc_boxplot(
         df,
         resolved_output_plot,
-        title=title,
         slide_channel_names=slide_channel_names,
     )
     return resolved_output_plot
@@ -65,7 +64,6 @@ def write_auc_boxplot(
     df: pd.DataFrame,
     output_plot: Path,
     *,
-    title: str | None,
     slide_channel_names: dict[int, str],
 ) -> None:
     positive_df = df.loc[df["auc"] > 0].copy()
@@ -82,7 +80,7 @@ def write_auc_boxplot(
         for slide_channel in slide_channels
     ]
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=plot_layout.FIGURE_SIZE_IN)
     ax.boxplot(
         grouped_values,
         tick_labels=boxplot_tick_labels(slide_channels, trace_counts, slide_channel_names),
@@ -91,11 +89,9 @@ def write_auc_boxplot(
     ax.set_xlabel(boxplot_x_axis_label(slide_channel_names))
     ax.set_ylabel("AUC")
     ax.set_yscale("log")
-    plot_title = title if title is not None else f"AUC by {boxplot_x_axis_label(slide_channel_names)}"
-    ax.set_title(plot_title)
 
     output_plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_plot)
+    fig.savefig(output_plot, dpi=plot_layout.FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -123,18 +119,12 @@ def cli(
         "-o",
         help="Output PNG path. Default: auc.png in the same directory as the AUC CSV.",
     ),
-    title: str | None = typer.Option(
-        None,
-        "--title",
-        help='Plot title. Default: "AUC by condition" when slide.json names exist, else "AUC by slide channel".',
-    ),
 ) -> None:
     workspace = infer_workspace_for_plot_csv(auc_csv)
     slide_channel_names = load_slide_channel_labels(workspace)
     resolved_output_plot = run_plot_auc(
         auc_csv,
         output=output,
-        title=title,
         slide_channel_names=slide_channel_names,
     )
     print(format_written_auc_plot_message(resolved_output_plot))

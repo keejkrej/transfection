@@ -2,14 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from transfection.analysis.trace_fluor import trace_color_alpha_from_fluor_name
 from transfection.data.roi import PositionIndex, read_roi_stack, roi_frame_2d
 
 
@@ -100,36 +95,9 @@ def load_timeseries_csv(csv_path: Path) -> pd.DataFrame:
     missing = required.difference(df.columns)
     if missing:
         raise ValueError(
-            f"{csv_path} is missing required columns for plotting: {sorted(missing)}"
+            f"{csv_path} is missing required columns for timeseries metrics: {sorted(missing)}"
         )
     sort_columns = ["roi", "t"]
     if "pos" in df.columns:
         sort_columns = ["pos", *sort_columns]
     return df.sort_values(sort_columns).reset_index(drop=True)
-
-
-def default_output_plot_path(csv_path: Path, output_plot: Path | None) -> Path:
-    plot_path = output_plot or csv_path.with_suffix(".png")
-    return plot_path.resolve()
-
-
-def write_trace_plot(
-    df: pd.DataFrame,
-    output_plot: Path,
-    *,
-    title: str | None,
-    name_hint: str = "",
-) -> None:
-    trace_color, trace_alpha = trace_color_alpha_from_fluor_name(name_hint)
-    fig, ax = plt.subplots()
-    for _, roi_df in df.groupby("roi", sort=True):
-        ax.plot(roi_df["t"], roi_df["corrected"], color=trace_color, alpha=trace_alpha)
-
-    ax.set_xlabel("frame")
-    ax.set_ylabel("corrected intensity")
-    if title is not None:
-        ax.set_title(title)
-
-    output_plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_plot)
-    plt.close(fig)
