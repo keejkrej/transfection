@@ -89,7 +89,7 @@ Write-Host @"
 
 transfection slide
 ------------------
-Slide channel ids are assigned automatically (0, 1, 2, … in entry order; not part of --sample text).
+Slide channel ids are assigned automatically (0, 1, 2, ... in entry order; not part of --sample text).
 Each mapping: sample_name, then image channel, then positions (e.g. 10,11 or 0:12 for a range).
 Compact fragments look like positions@image_channel#sample_name and are joined with | for --sample.
 Do not use | # @ in the sample_name (they are syntax characters).

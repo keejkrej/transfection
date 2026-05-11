@@ -219,7 +219,7 @@ $interval = Read-RequiredPositiveDouble "Frame interval in minutes (for plot-tim
 $intervalStr = $interval.ToString([System.Globalization.CultureInfo]::InvariantCulture)
 
 # Single-quoted literals: PS 5.1 misparses & and (--foo) inside double-quoted strings (PS 7 is fine).
-Write-Host ("`n" + 'Analyze timeseries & fit — set --jobs and (for fit) --max-onset-minutes (defaults from this script):') -ForegroundColor DarkGray
+Write-Host ("`n" + 'Analyze timeseries & fit - set --jobs and (for fit) --max-onset-minutes (defaults from this script):') -ForegroundColor DarkGray
 $fitJobs = Read-PositiveIntWithDefault -Prompt 'Worker processes for timeseries & fit (--jobs)' -Default $DefaultFitJobs
 $fitMaxOnset = Read-NonNegativeDoubleWithDefault -Prompt 'Max onset minutes (--max-onset-minutes)' -Default $DefaultMaxOnsetMinutes
 $fitMaxOnsetStr = $fitMaxOnset.ToString([System.Globalization.CultureInfo]::InvariantCulture)
