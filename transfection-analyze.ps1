@@ -76,7 +76,7 @@ function Read-NonNegativeDoubleWithDefault {
     )
     while ($true) {
         $dStr = $Default.ToString([System.Globalization.CultureInfo]::InvariantCulture)
-        Write-Host "$Prompt [default: $dStr; 0 = expression_onset fixed at 0]"
+        Write-Host "$Prompt [default: $dStr; 0 = translation_onset fixed at 0]"
         $line = Read-Host "Value (Enter for default)"
         if ($null -eq $line) { continue }
         $t = $line.Trim()

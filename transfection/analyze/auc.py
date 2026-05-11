@@ -20,29 +20,10 @@ HELP = (
 )
 
 
-def is_compact_channel_bundle_stem(stem: str) -> bool:
-    """True when the aggregate stem is only ch{n} (one shared microscopy channel)."""
+def default_results_table_csv_path(results_dir: Path, *, kind: str) -> Path:
+    """Write ``auc.csv`` or ``fit.csv`` under ``results_dir``."""
 
-    return bool(re.fullmatch(r"ch\d+", stem))
-
-
-def uses_bare_results_filenames(aggregate_stem: str) -> bool:
-    """Compact stem ch{n} or the fallback label when stems disagree (`timeseries`)."""
-
-    return is_compact_channel_bundle_stem(aggregate_stem) or aggregate_stem == "timeseries"
-
-
-def results_plot_grid_basename(aggregate_stem: str) -> str:
-    if uses_bare_results_filenames(aggregate_stem):
-        return "overview"
-    return aggregate_stem
-
-
-def default_results_table_csv_path(results_dir: Path, aggregate_stem: str, *, kind: str) -> Path:
-    """kind is 'auc' or 'fit' -> auc.csv / fit.csv or {stem}_auc.csv."""
-
-    name = f"{kind}.csv" if uses_bare_results_filenames(aggregate_stem) else f"{aggregate_stem}_{kind}.csv"
-    return (results_dir.resolve() / name).resolve()
+    return (results_dir.resolve() / f"{kind}.csv").resolve()
 
 
 def run_auc(timeseries_csvs: list[Path], *, interval: float, output_csv: Path | None) -> Path:
@@ -56,29 +37,6 @@ def run_auc(timeseries_csvs: list[Path], *, interval: float, output_csv: Path | 
     return resolved_output_csv
 
 
-def strip_slide_channel_segment(stem: str) -> str:
-    return re.sub(r"^sc\d+_", "", stem)
-
-
-def normalize_output_stem(csv_path: Path) -> str:
-    return strip_slide_channel_segment(csv_path.stem)
-
-
-def aggregate_output_stem(timeseries_csvs: list[Path]) -> str:
-    normalized_stems = {normalize_output_stem(csv_path) for csv_path in timeseries_csvs}
-    if len(normalized_stems) == 1:
-        stem = next(iter(normalized_stems))
-        return stem if stem != "" else "timeseries"
-    if len(timeseries_csvs) == 1:
-        stem = normalize_output_stem(timeseries_csvs[0])
-        return stem if stem != "" else "timeseries"
-    return "timeseries"
-
-
-def aggregate_output_stem_candidates(csv_path: Path) -> set[str]:
-    return {normalize_output_stem(csv_path)}
-
-
 def default_output_csv_path(
     timeseries_csvs: list[Path],
     output_csv: Path | None,
@@ -87,11 +45,9 @@ def default_output_csv_path(
 ) -> Path:
     if output_csv is not None:
         return output_csv.resolve()
-    stem = aggregate_output_stem(timeseries_csvs)
     if results_dir is not None:
-        return default_results_table_csv_path(results_dir, stem, kind="auc")
-    name = "auc.csv" if uses_bare_results_filenames(stem) else f"{stem}_auc.csv"
-    return timeseries_csvs[0].with_name(name).resolve()
+        return default_results_table_csv_path(results_dir, kind="auc")
+    return timeseries_csvs[0].with_name("auc.csv").resolve()
 
 
 def parse_slide_channel(csv_path: Path) -> int | None:

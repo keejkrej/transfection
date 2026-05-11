@@ -26,7 +26,6 @@ def run_plot_auc(
     auc_csv: Path,
     *,
     output: Path | None,
-    color: str,
     title: str | None,
     slide_channel_names: dict[int, str],
 ) -> Path:
@@ -36,7 +35,6 @@ def run_plot_auc(
     write_auc_boxplot(
         df,
         resolved_output_plot,
-        color=color,
         title=title,
         slide_channel_names=slide_channel_names,
     )
@@ -58,15 +56,15 @@ def load_auc_csv(auc_csv: Path) -> pd.DataFrame:
 
 
 def default_output_plot_path(auc_csv: Path, output: Path | None) -> Path:
-    plot_path = output or auc_csv.with_suffix(".png")
-    return plot_path.resolve()
+    if output is not None:
+        return output.resolve()
+    return (auc_csv.parent / "auc.png").resolve()
 
 
 def write_auc_boxplot(
     df: pd.DataFrame,
     output_plot: Path,
     *,
-    color: str,
     title: str | None,
     slide_channel_names: dict[int, str],
 ) -> None:
@@ -84,27 +82,20 @@ def write_auc_boxplot(
         for slide_channel in slide_channels
     ]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    boxplot = ax.boxplot(
+    fig, ax = plt.subplots()
+    ax.boxplot(
         grouped_values,
-        patch_artist=True,
-        showfliers=False,
         tick_labels=boxplot_tick_labels(slide_channels, trace_counts, slide_channel_names),
-        medianprops={"color": "black", "linewidth": 1.2},
     )
-    for patch in boxplot["boxes"]:
-        patch.set_facecolor(color)
-        patch.set_alpha(0.65)
 
     ax.set_xlabel(boxplot_x_axis_label(slide_channel_names))
     ax.set_ylabel("AUC")
     ax.set_yscale("log")
-    ax.grid(axis="y", alpha=0.2, linewidth=0.5)
-    if title is not None:
-        ax.set_title(title)
+    plot_title = title if title is not None else f"AUC by {boxplot_x_axis_label(slide_channel_names)}"
+    ax.set_title(plot_title)
 
     output_plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_plot, dpi=150, bbox_inches="tight")
+    fig.savefig(output_plot)
     plt.close(fig)
 
 
@@ -130,17 +121,12 @@ def cli(
         None,
         "--output",
         "-o",
-        help="Output PNG path. Default: same path as the AUC CSV with .png extension.",
-    ),
-    color: str = typer.Option(
-        "#c03a2b",
-        "--color",
-        help="Matplotlib color for the box fills.",
+        help="Output PNG path. Default: auc.png in the same directory as the AUC CSV.",
     ),
     title: str | None = typer.Option(
-        "AUC by slide channel",
+        None,
         "--title",
-        help="Optional plot title.",
+        help='Plot title. Default: "AUC by condition" when slide.json names exist, else "AUC by slide channel".',
     ),
 ) -> None:
     workspace = infer_workspace_for_plot_csv(auc_csv)
@@ -148,7 +134,6 @@ def cli(
     resolved_output_plot = run_plot_auc(
         auc_csv,
         output=output,
-        color=color,
         title=title,
         slide_channel_names=slide_channel_names,
     )

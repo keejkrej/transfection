@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from transfection.analysis.trace_fluor import trace_color_alpha_from_fluor_name
 from transfection.data.roi import PositionIndex, read_roi_stack, roi_frame_2d
 
 
@@ -116,27 +117,19 @@ def write_trace_plot(
     df: pd.DataFrame,
     output_plot: Path,
     *,
-    color: str,
-    alpha: float,
-    linewidth: float,
     title: str | None,
+    name_hint: str = "",
 ) -> None:
-    fig, ax = plt.subplots(figsize=(12, 7))
+    trace_color, trace_alpha = trace_color_alpha_from_fluor_name(name_hint)
+    fig, ax = plt.subplots()
     for _, roi_df in df.groupby("roi", sort=True):
-        ax.plot(
-            roi_df["t"],
-            roi_df["corrected"],
-            color=color,
-            alpha=alpha,
-            linewidth=linewidth,
-        )
+        ax.plot(roi_df["t"], roi_df["corrected"], color=trace_color, alpha=trace_alpha)
 
     ax.set_xlabel("frame")
     ax.set_ylabel("corrected intensity")
-    ax.grid(alpha=0.2, linewidth=0.5)
     if title is not None:
         ax.set_title(title)
 
     output_plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_plot, dpi=150, bbox_inches="tight")
+    fig.savefig(output_plot)
     plt.close(fig)

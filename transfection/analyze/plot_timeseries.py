@@ -13,13 +13,14 @@ import pandas as pd
 import typer
 
 from transfection.analysis.roi import load_timeseries_csv
+from transfection.analysis.trace_fluor import trace_color_alpha_from_fluor_name
 
 from . import auc, paths
 from .slide_labels import infer_workspace_for_timeseries_dir, load_slide_channel_labels
 
 HELP = (
     f"Plot every metrics CSV in a {paths.TIMESERIES_DIRNAME}/ folder as subplots in two PNGs "
-    f"(default: sibling {paths.RESULTS_DIRNAME}/overview.png and overview_shared_y.png). "
+    f"(default: sibling {paths.RESULTS_DIRNAME}/traces.png and traces_shared_y.png). "
     "Y limits use 1–99% percentiles of corrected intensity per panel; the second figure uses one "
     "y range (min of panel 1% values, max of panel 99% values)."
 )
@@ -31,9 +32,6 @@ def run_plot_timeseries(
     output: Path | None,
     results_dir: Path | None,
     columns: int,
-    alpha: float,
-    linewidth: float,
-    color: str,
     title: str | None,
     slide_channel_names: dict[int, str],
 ) -> tuple[Path, Path]:
@@ -50,9 +48,6 @@ def run_plot_timeseries(
         panels,
         resolved_output_plot,
         ylim_fn=lambda i: panel_ylims[i],
-        alpha=alpha,
-        linewidth=linewidth,
-        color=color,
         title=title,
         columns=columns,
         slide_channel_names=slide_channel_names,
@@ -61,9 +56,6 @@ def run_plot_timeseries(
         panels,
         resolved_shared_y_plot,
         ylim_fn=lambda _i: (unified_low, unified_high),
-        alpha=alpha,
-        linewidth=linewidth,
-        color=color,
         title=title,
         columns=columns,
         slide_channel_names=slide_channel_names,
@@ -79,15 +71,13 @@ def default_output_plot_path(
 ) -> Path:
     if output is not None:
         return output.resolve()
-    stem = auc.aggregate_output_stem(timeseries_csvs)
-    base = auc.results_plot_grid_basename(stem)
     if results_dir is not None:
-        return (results_dir.resolve() / f"{base}.png").resolve()
-    return timeseries_csvs[0].with_name(f"{base}.png").resolve()
+        return (results_dir.resolve() / "traces.png").resolve()
+    return timeseries_csvs[0].with_name("traces.png").resolve()
 
 
 def unified_y_output_path(primary_plot: Path) -> Path:
-    return primary_plot.with_name(f"{primary_plot.stem}_shared_y{primary_plot.suffix}")
+    return primary_plot.with_name("traces_shared_y.png")
 
 
 def panel_corrected_values(df: pd.DataFrame) -> np.ndarray:
@@ -139,32 +129,35 @@ def trace_group_columns(df) -> list[str]:
     return columns
 
 
+def trace_naming_haystack(csv_path: Path, slide_channel_names: dict[int, str]) -> str:
+    """Text used to infer fluor colors (filename, stem, optional slide channel label)."""
+    parts = [csv_path.name, csv_path.stem]
+    sc = auc.parse_slide_channel(csv_path)
+    if sc is not None and sc in slide_channel_names:
+        parts.append(slide_channel_names[sc])
+    return " ".join(parts)
+
+
 def write_subplot_grid(
     panels: list[tuple[Path, pd.DataFrame]],
     output_plot: Path,
     *,
     ylim_fn: Callable[[int], tuple[float, float]],
-    alpha: float,
-    linewidth: float,
-    color: str,
     title: str | None,
     columns: int,
     slide_channel_names: dict[int, str],
 ) -> None:
     rows = math.ceil(len(panels) / columns)
-    fig, axes = plt.subplots(rows, columns, figsize=(6.0 * columns, 4.8 * rows), squeeze=False)
+    fig, axes = plt.subplots(rows, columns, squeeze=False)
     axes_flat = axes.flatten()
 
     for index, (ax, (csv_path, df)) in enumerate(zip(axes_flat, panels)):
+        trace_color, trace_alpha = trace_color_alpha_from_fluor_name(
+            trace_naming_haystack(csv_path, slide_channel_names)
+        )
         trace_groups = df.groupby(trace_group_columns(df), sort=True, dropna=False)
         for _, roi_df in trace_groups:
-            ax.plot(
-                roi_df["t"],
-                roi_df["corrected"],
-                color=color,
-                alpha=alpha,
-                linewidth=linewidth,
-            )
+            ax.plot(roi_df["t"], roi_df["corrected"], color=trace_color, alpha=trace_alpha)
         ax.set_title(subplot_title(csv_path, trace_groups.ngroups, slide_channel_names=slide_channel_names))
         ax.set_xlabel("frame")
         ax.set_ylabel("corrected intensity")
@@ -181,7 +174,7 @@ def write_subplot_grid(
         fig.tight_layout()
 
     output_plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_plot, dpi=150, bbox_inches="tight")
+    fig.savefig(output_plot)
     plt.close(fig)
 
 
@@ -206,8 +199,8 @@ def cli(
         "--output",
         "-o",
         help=(
-            f"Primary output PNG path. Default: <workspace>/{paths.RESULTS_DIRNAME}/overview.png "
-            "with a companion overview_shared_y.png for unified y limits."
+            f"Primary output PNG path. Default: <workspace>/{paths.RESULTS_DIRNAME}/traces.png "
+            "with a companion traces_shared_y.png for unified y limits."
         ),
     ),
     columns: int = typer.Option(
@@ -215,24 +208,6 @@ def cli(
         "--columns",
         min=1,
         help="Number of subplot columns in the output grid.",
-    ),
-    alpha: float = typer.Option(
-        0.12,
-        "--alpha",
-        min=0.0,
-        max=1.0,
-        help="Per-trace opacity.",
-    ),
-    linewidth: float = typer.Option(
-        1.0,
-        "--linewidth",
-        min=0.1,
-        help="Per-trace line width.",
-    ),
-    color: str = typer.Option(
-        "#c03a2b",
-        "--color",
-        help="Matplotlib color for all traces.",
     ),
     title: str | None = typer.Option(
         None,
@@ -249,9 +224,6 @@ def cli(
         output=output,
         results_dir=None if output is not None else results_dir,
         columns=columns,
-        alpha=alpha,
-        linewidth=linewidth,
-        color=color,
         title=title,
         slide_channel_names=slide_channel_names,
     )

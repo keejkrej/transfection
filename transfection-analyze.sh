@@ -77,7 +77,7 @@ read_nonnegative_double_with_default() {
   local prompt="$1" default="$2" line d_str
   d_str="$default"
   while true; do
-    echo "$prompt [default: $d_str; 0 = expression_onset fixed at 0]" >&2
+    echo "$prompt [default: $d_str; 0 = translation_onset fixed at 0]" >&2
     read -r -p "Value (Enter for default): " line || exit 1
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
