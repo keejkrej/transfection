@@ -4,6 +4,36 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Wait-PressAnyKeyToExit {
+    Write-Host ""
+    Write-Host "Press any key to exit..." -ForegroundColor DarkGray
+    try {
+        if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
+            Read-Host "Press Enter to exit"
+            return
+        }
+        while ([Console]::KeyAvailable) {
+            [void][Console]::ReadKey($true)
+        }
+        [void][Console]::ReadKey($true)
+    } catch {
+        Read-Host "Press Enter to exit"
+    }
+}
+
+function Exit-Script {
+    param([int]$ExitCode = 0)
+    Wait-PressAnyKeyToExit
+    exit $ExitCode
+}
+
+trap {
+    Write-Host ""
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Wait-PressAnyKeyToExit
+    exit 1
+}
+
 $RepoRoot = if (Test-Path -LiteralPath (Join-Path $PSScriptRoot "pyproject.toml")) {
     $PSScriptRoot
 } else {
@@ -17,7 +47,7 @@ if (Test-Path -LiteralPath $BundledUv) {
     $UvExe = "uv"
 } else {
     Write-Host "Neither $BundledUv nor 'uv' on PATH was found. Run install.ps1 or install uv." -ForegroundColor Red
-    exit 1
+    Exit-Script 1
 }
 
 function Read-RequiredNonEmpty {
@@ -112,6 +142,7 @@ if (Test-Path -LiteralPath $outputPath) {
 
 Write-Host "`nRunning: & `"$UvExe`" run transfection slide config ...`n" -ForegroundColor Cyan
 
+$slideExitCode = 0
 Push-Location $RepoRoot
 try {
     $arguments = @(
@@ -120,7 +151,9 @@ try {
         "--output", $outputPath
     ) + $forceArgs
     & $UvExe @arguments
-    exit $LASTEXITCODE
+    $slideExitCode = [int]$LASTEXITCODE
 } finally {
     Pop-Location
 }
+
+Exit-Script $slideExitCode

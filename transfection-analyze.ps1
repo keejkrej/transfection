@@ -4,6 +4,36 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Wait-PressAnyKeyToExit {
+    Write-Host ""
+    Write-Host "Press any key to exit..." -ForegroundColor DarkGray
+    try {
+        if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
+            Read-Host "Press Enter to exit"
+            return
+        }
+        while ([Console]::KeyAvailable) {
+            [void][Console]::ReadKey($true)
+        }
+        [void][Console]::ReadKey($true)
+    } catch {
+        Read-Host "Press Enter to exit"
+    }
+}
+
+function Exit-Script {
+    param([int]$ExitCode = 0)
+    Wait-PressAnyKeyToExit
+    exit $ExitCode
+}
+
+trap {
+    Write-Host ""
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Wait-PressAnyKeyToExit
+    exit 1
+}
+
 $RepoRoot = if (Test-Path -LiteralPath (Join-Path $PSScriptRoot "pyproject.toml")) {
     $PSScriptRoot
 } else {
@@ -17,7 +47,7 @@ if (Test-Path -LiteralPath $BundledUv) {
     $UvExe = "uv"
 } else {
     Write-Host "Neither $BundledUv nor 'uv' on PATH was found. Run install.ps1 or install uv." -ForegroundColor Red
-    exit 1
+    Exit-Script 1
 }
 
 # Defaults for `transfection analyze fit` (defined here; always passed explicitly from this script).
@@ -145,7 +175,7 @@ function Exit-IfFailed {
     param([int]$Code, [string]$Step)
     if ($Code -ne 0) {
         Write-Host "`nStopped: $Step failed (exit $Code)." -ForegroundColor Red
-        exit $Code
+        Exit-Script $Code
     }
 }
 
@@ -217,11 +247,11 @@ if ($runTimeseries) {
 $tsDirForPlots = Join-Path $workspace "timeseries"
 if (-not (Test-Path -LiteralPath $tsDirForPlots -PathType Container)) {
     Write-Host "No timeseries/ directory - run timeseries first." -ForegroundColor Red
-    exit 1
+    Exit-Script 1
 }
 if ((Get-TimeseriesMetricsCount $workspace) -lt 1) {
     Write-Host "timeseries/ has no workspace metrics CSVs (sc*_ch*.csv)." -ForegroundColor Red
-    exit 1
+    Exit-Script 1
 }
 
 $code = Invoke-TransfectionAnalyze @(
@@ -239,7 +269,7 @@ Exit-IfFailed $code "analyze auc"
 $aucCsv = Find-ResultsAucCsv $workspace
 if ([string]::IsNullOrEmpty($aucCsv)) {
     Write-Host "Could not find auc.csv or *_auc.csv under results/." -ForegroundColor Red
-    exit 1
+    Exit-Script 1
 }
 
 $code = Invoke-TransfectionAnalyze @("plot-auc", $aucCsv)
@@ -256,7 +286,7 @@ Exit-IfFailed $code "analyze fit"
 $fitCsv = Find-ResultsFitCsv $workspace
 if ([string]::IsNullOrEmpty($fitCsv)) {
     Write-Host "Could not find fit.csv or *_fit.csv under results/." -ForegroundColor Red
-    exit 1
+    Exit-Script 1
 }
 
 $code = Invoke-TransfectionAnalyze @(
@@ -266,4 +296,4 @@ $code = Invoke-TransfectionAnalyze @(
 Exit-IfFailed $code "analyze plot-fit"
 
 Write-Host "`nPipeline finished." -ForegroundColor Green
-exit 0
+Exit-Script 0
