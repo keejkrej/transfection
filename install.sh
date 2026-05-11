@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+pause_to_exit() {
+  if [[ -t 0 ]]; then
+    read -r -p "Press Enter to exit..." _ || true
+  fi
+}
+trap pause_to_exit EXIT
+
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 UV_DIR="$ROOT/.uv"
 

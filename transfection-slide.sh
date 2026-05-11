@@ -5,6 +5,13 @@
 
 set -euo pipefail
 
+pause_to_exit() {
+  if [[ -t 0 ]]; then
+    read -r -p "Press Enter to exit..." _ || true
+  fi
+}
+trap pause_to_exit EXIT
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -d "$SCRIPT_DIR/../apps/transfection" ]]; then
   REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -58,7 +65,7 @@ cat << 'EOF'
 
 transfection slide
 ------------------
-Slide channel ids are assigned automatically (0, 1, 2, … in entry order; not part of --sample text).
+Slide channel ids are assigned automatically (0, 1, 2, ... in entry order; not part of --sample text).
 Each mapping: sample_name, then image channel, then positions (e.g. 10,11 or 0:12 for a range).
 Compact fragments look like positions@image_channel#sample_name and are joined with | for --sample.
 Do not use | # @ in the sample_name (they are syntax characters).
@@ -103,11 +110,15 @@ for ((i = 1; i < ${#segments[@]}; i++)); do
   sample_arg+="|${segments[i]}"
 done
 
-output_raw="$(read_nonempty "Output path for slide.json:")"
+output_raw="$(read_nonempty "Output path for slide.json")"
 if [[ "$output_raw" != /* ]]; then
   output_path="$(pwd)/$output_raw"
 else
   output_path="$output_raw"
+fi
+
+if [[ -d "$output_path" ]] || [[ "$output_raw" == */ ]]; then
+  output_path="${output_path%/}/slide.json"
 fi
 
 force_args=()
@@ -121,8 +132,11 @@ echo "" >&2
 echo "Running: $UV_EXE run transfection slide config ..." >&2
 echo "" >&2
 
-cd "$REPO_ROOT"
-exec "$UV_EXE" run transfection slide config \
+set +e
+(cd "$REPO_ROOT" && "$UV_EXE" run transfection slide config \
   --sample "$sample_arg" \
   --output "$output_path" \
-  "${force_args[@]}"
+  "${force_args[@]}")
+slide_exit=$?
+set -e
+exit "$slide_exit"

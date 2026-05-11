@@ -5,6 +5,13 @@
 
 set -euo pipefail
 
+pause_to_exit() {
+  if [[ -t 0 ]]; then
+    read -r -p "Press Enter to exit..." _ || true
+  fi
+}
+trap pause_to_exit EXIT
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -d "$SCRIPT_DIR/../apps/transfection" ]]; then
   REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -172,7 +179,7 @@ fi
 interval="$(read_positive_double "Frame interval in minutes (for plot-timeseries, auc, fit, plot-fit):")"
 
 echo "" >&2
-echo "Analyze timeseries & fit — set --jobs and (for fit) --max-onset-minutes (defaults from this script):" >&2
+echo "Analyze timeseries & fit - set --jobs and (for fit) --max-onset-minutes (defaults from this script):" >&2
 fit_jobs="$(read_positive_int_with_default "Worker processes for timeseries & fit (--jobs)" "$DEFAULT_FIT_JOBS")"
 fit_max_onset="$(read_nonnegative_double_with_default "Max onset minutes (--max-onset-minutes)" "$DEFAULT_MAX_ONSET")"
 
@@ -206,7 +213,7 @@ fi
 
 ts_dir="${workspace}/timeseries"
 if [[ ! -d "$ts_dir" ]]; then
-  echo "No timeseries/ directory — run timeseries first." >&2
+  echo "No timeseries/ directory - run timeseries first." >&2
   exit 1
 fi
 if [[ "$(get_timeseries_metrics_count "$workspace")" -lt 1 ]]; then

@@ -130,8 +130,17 @@ while ($true) {
 $sampleArg = $segments -join "|"
 
 $outputRaw = Read-RequiredNonEmpty "Output path for slide.json"
-$outputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($outputRaw)
+$outputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($outputRaw.Trim())
 
+$looksLikeFolder =
+    $outputRaw.TrimEnd().EndsWith('\') -or
+    $outputRaw.TrimEnd().EndsWith('/') -or
+    (Test-Path -LiteralPath $outputPath -PathType Container)
+
+if ($looksLikeFolder) {
+    $folderPath = $outputPath.TrimEnd([char[]]([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar))
+    $outputPath = Join-Path $folderPath "slide.json"
+}
 $forceArgs = @()
 if (Test-Path -LiteralPath $outputPath) {
     $ow = Read-Host "Output exists. Overwrite? [y/N]"
