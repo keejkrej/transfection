@@ -29,11 +29,11 @@ fi
 echo "Installing package..."
 "$UV_BIN" sync --directory "$ROOT"
 
-for helper in delivery-expression-analyze.sh delivery-slide-wizard.sh; do
+for helper in transfection-analyze.sh transfection-slide.sh; do
     if [[ -f "$ROOT/$helper" ]]; then chmod +x "$ROOT/$helper"; fi
 done
 
 echo "Done."
 echo ""
-echo "Run delivery with:"
-echo "  $UV_BIN run --directory "$ROOT" delivery ..."
+echo "Run transfection with:"
+echo "  $UV_BIN run --directory "$ROOT" transfection ..."

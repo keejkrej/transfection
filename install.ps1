@@ -36,5 +36,5 @@ Write-Host "Installing package..."
 
 Write-Host "Done."
 Write-Host ""
-Write-Host "Run delivery with:"
-Write-Host "  .\$([IO.Path]::Combine('.uv', 'uv.exe')) run delivery ..."
+Write-Host "Run transfection with:"
+Write-Host "  .\$([IO.Path]::Combine('.uv', 'uv.exe')) run transfection ..."

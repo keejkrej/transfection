@@ -1,4 +1,4 @@
-# Delivery
+# Transfection
 
 Extract this archive and run the appropriate install script for your platform.
 
@@ -17,30 +17,30 @@ bash install.sh
 After installation, run:
 
 Windows:
+
 ```
-.uv/uv.exe run delivery ...
+.uv/uv.exe run transfection ...
 ```
 
 Linux / macOS:
+
 ```
-.uv/uv run delivery ...
+.uv/uv run transfection ...
 ```
 
 Optional pipelines (Windows PowerShell, from the same directory as `install.ps1`):
+
 ```powershell
-./delivery-expression-analyze.ps1
-./delivery-slide-wizard.ps1
+./transfection-analyze.ps1
+./transfection-slide.ps1
 ```
 
 Optional pipelines (after `bash install.sh`, from the same directory):
+
 ```bash
-chmod +x delivery-expression-analyze.sh delivery-slide-wizard.sh
-./delivery-expression-analyze.sh
-./delivery-slide-wizard.sh
+chmod +x transfection-analyze.sh transfection-slide.sh
+./transfection-analyze.sh
+./transfection-slide.sh
 ```
 
-From a git clone (repo root), you can instead run:
-```bash
-bash scripts/delivery-expression-analyze.sh
-bash scripts/delivery-slide-wizard.sh
-```
+From a git clone (repo root), run the same helper scripts from the repository root (next to `pyproject.toml`).
