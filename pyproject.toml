@@ -4,12 +4,12 @@ version = "0.1.0"
 description = "Microscopy ROI extraction, slide mapping, and timeseries metrics."
 requires-python = ">=3.12"
 dependencies = [
-  "markdown-it-py>=3.0,<4",
-  "matplotlib>=3.8",
-  "numpy>=1.26",
-  "pandas>=2.2.3,<2.3",
-  "tifffile>=2025.3.13",
-  "typer>=0.12",
+  "markdown-it-py<4",
+  "matplotlib",
+  "numpy",
+  "pandas<3",
+  "tifffile",
+  "typer",
 ]
 
 [project.scripts]
