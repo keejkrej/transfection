@@ -9,15 +9,19 @@ from typing import Callable
 
 import pandas as pd
 
-from transfection.analysis.roi import (
+from transfection.core import (
+    SlideChannelMapping,
     compute_roi_metrics,
+    load_slide_mapping,
+    position_dir,
     quantile_column_name,
+    read_position_index,
+    validate_channel_index,
     write_metrics_csv,
 )
-from transfection.data.roi import position_dir, read_position_index, validate_channel_index
-from transfection.data.slide import SlideChannelMapping, load_slide_mapping
 
 
+NAME = "timeseries"
 HELP = (
     "Read cropped ROI TIFF timelapses from roi/PosN, compute per-ROI intensity "
     "metrics for each slide channel's mapped image channel, and write one long-form CSV "

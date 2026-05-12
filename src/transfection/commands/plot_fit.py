@@ -10,17 +10,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from transfection.analysis.roi import load_timeseries_csv
-from transfection.analysis.trace_fluor import trace_color_alpha_from_fluor_name
-
-from . import auc, plot_auc, plot_layout, plot_timeseries, paths
-from .slide_labels import (
+from transfection import core as paths
+from transfection import core as plot_layout
+from transfection.commands import auc, plot_auc, plot_timeseries
+from transfection.core import (
     boxplot_tick_labels,
     boxplot_x_axis_label,
     infer_workspace_for_plot_csv,
     load_slide_channel_labels,
+    load_timeseries_csv,
+    trace_color_alpha_from_fluor_name,
 )
 
+NAME = "plot-fit"
 PLOTTED_PARAMETERS = (
     ("intensity_offset", "intensity offset"),
     ("protein_lifetime", "protein lifetime"),

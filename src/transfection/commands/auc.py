@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from transfection.analysis.roi import load_timeseries_csv
+from transfection import core as paths
+from transfection.core import load_timeseries_csv
 
-from . import paths
 
-
+NAME = "auc"
 GROUP_COLUMNS = ("pos", "roi")
 OUTPUT_COLUMNS = ("slide_channel", "pos", "roi", "auc")
 

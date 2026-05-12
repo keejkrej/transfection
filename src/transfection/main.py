@@ -6,20 +6,19 @@ from typing import Annotated
 
 import typer
 
-from transfection.analyze import auc as auc_command
-from transfection.analyze import fit as fit_command
-from transfection.analyze import plot_auc as plot_auc_command
-from transfection.analyze import plot_fit as plot_fit_command
-from transfection.analyze import plot_timeseries as plot_timeseries_command
-from transfection.analyze import timeseries as timeseries_command
-from transfection.slide import config as slide_command
+from transfection import core
+from transfection.commands import auc as auc_command
+from transfection.commands import fit as fit_command
+from transfection.commands import plot_auc as plot_auc_command
+from transfection.commands import plot_fit as plot_fit_command
+from transfection.commands import plot_timeseries as plot_timeseries_command
+from transfection.commands import slide as slide_command
+from transfection.commands import timeseries as timeseries_command
 
-HELP = "Microscopy ROI pipelines: slide mapping and timeseries metrics."
-
-app = typer.Typer(add_completion=False, no_args_is_help=True, help=HELP)
+app = typer.Typer(add_completion=False, no_args_is_help=True, help=core.HELP)
 
 
-@app.command("slide", help=slide_command.HELP)
+@app.command(slide_command.NAME, help=slide_command.HELP)
 def slide(
     sample: Annotated[
         str,
@@ -55,7 +54,7 @@ def slide(
     slide_command.run_command(sample=sample, output=output, force=force)
 
 
-@app.command("timeseries", help=timeseries_command.HELP)
+@app.command(timeseries_command.NAME, help=timeseries_command.HELP)
 def timeseries(
     workspace: Annotated[
         Path,
@@ -110,7 +109,7 @@ def timeseries(
     )
 
 
-@app.command("auc", help=auc_command.HELP)
+@app.command(auc_command.NAME, help=auc_command.HELP)
 def auc(
     workspace: Annotated[
         Path,
@@ -119,7 +118,7 @@ def auc(
             file_okay=False,
             dir_okay=True,
             metavar="WORKSPACE",
-            help=f"Workspace with {auc_command.paths.TIMESERIES_DIRNAME}/ containing ROI metrics CSV files.",
+            help=f"Workspace with {core.TIMESERIES_DIRNAME}/ containing ROI metrics CSV files.",
         ),
     ],
     interval: Annotated[
@@ -134,7 +133,7 @@ def auc(
     auc_command.run_command(workspace=workspace, interval=interval)
 
 
-@app.command("fit", help=fit_command.HELP)
+@app.command(fit_command.NAME, help=fit_command.HELP)
 def fit(
     workspace: Annotated[
         Path,
@@ -143,7 +142,7 @@ def fit(
             file_okay=False,
             dir_okay=True,
             metavar="WORKSPACE",
-            help=f"Workspace with {fit_command.paths.TIMESERIES_DIRNAME}/ containing ROI metrics CSV files.",
+            help=f"Workspace with {core.TIMESERIES_DIRNAME}/ containing ROI metrics CSV files.",
         ),
     ],
     interval: Annotated[
@@ -189,7 +188,7 @@ def fit(
     )
 
 
-@app.command("plot-timeseries", help=plot_timeseries_command.HELP)
+@app.command(plot_timeseries_command.NAME, help=plot_timeseries_command.HELP)
 def plot_timeseries(
     metrics_dir: Annotated[
         Path,
@@ -199,8 +198,8 @@ def plot_timeseries(
             dir_okay=True,
             metavar="TIMESERIES_DIR",
             help=(
-                f"Directory of per-channel metrics CSVs (typically <workspace>/{plot_timeseries_command.paths.TIMESERIES_DIRNAME}). "
-                f"Default PNG is written alongside AUC/fit outputs under <workspace>/{plot_timeseries_command.paths.RESULTS_DIRNAME}/."
+                f"Directory of per-channel metrics CSVs (typically <workspace>/{core.TIMESERIES_DIRNAME}). "
+                f"Default PNG is written alongside AUC/fit outputs under <workspace>/{core.RESULTS_DIRNAME}/."
             ),
         ),
     ],
@@ -218,7 +217,7 @@ def plot_timeseries(
             "--output",
             "-o",
             help=(
-                f"Primary output PNG path. Default: <workspace>/{plot_timeseries_command.paths.RESULTS_DIRNAME}/traces.png "
+                f"Primary output PNG path. Default: <workspace>/{core.RESULTS_DIRNAME}/traces.png "
                 "with a companion traces_shared_y.png for unified y limits."
             ),
         ),
@@ -240,7 +239,7 @@ def plot_timeseries(
     )
 
 
-@app.command("plot-auc", help=plot_auc_command.HELP)
+@app.command(plot_auc_command.NAME, help=plot_auc_command.HELP)
 def plot_auc(
     auc_csv: Annotated[
         Path,
@@ -263,7 +262,7 @@ def plot_auc(
     plot_auc_command.run_command(auc_csv=auc_csv, output=output)
 
 
-@app.command("plot-fit", help=plot_fit_command.HELP)
+@app.command(plot_fit_command.NAME, help=plot_fit_command.HELP)
 def plot_fit(
     fit_csv: Annotated[
         Path,
@@ -272,8 +271,8 @@ def plot_fit(
             dir_okay=False,
             metavar="FIT_CSV",
             help=(
-                f"Must be <workspace>/{plot_fit_command.paths.RESULTS_DIRNAME}/fit.csv; sibling "
-                f"{plot_fit_command.paths.TIMESERIES_DIRNAME}/ supplies raw traces for the fitted-trace grid."
+                f"Must be <workspace>/{core.RESULTS_DIRNAME}/fit.csv; sibling "
+                f"{core.TIMESERIES_DIRNAME}/ supplies raw traces for the fitted-trace grid."
             ),
         ),
     ],
@@ -313,4 +312,4 @@ def plot_fit(
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    app(args=list(argv) if argv is not None else None, prog_name="transfection")
+    app(args=core.normalize_argv(argv), prog_name=core.PROG_NAME)

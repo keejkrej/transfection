@@ -5,12 +5,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from transfection.data.slide import (
+from transfection.core import (
     SlideMapping,
     parse_slide_mapping_spec,
     write_slide_mapping,
 )
 
+NAME = "slide"
 HELP = "Write slide.json from a compact slide mapping string."
 
 

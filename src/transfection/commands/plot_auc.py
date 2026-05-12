@@ -9,14 +9,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from . import plot_layout
-from .slide_labels import (
+from transfection import core as plot_layout
+from transfection.core import (
     boxplot_tick_labels,
     boxplot_x_axis_label,
     infer_workspace_for_plot_csv,
     load_slide_channel_labels,
 )
 
+NAME = "plot-auc"
 HELP = (
     "Plot AUC summaries as one box plot per slide channel."
 )

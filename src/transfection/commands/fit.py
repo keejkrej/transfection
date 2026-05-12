@@ -9,11 +9,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from transfection.analysis.roi import load_timeseries_csv
+from transfection import core as paths
+from transfection.commands import auc
+from transfection.core import load_timeseries_csv
 
-from . import auc, paths
 
-
+NAME = "fit"
 OUTPUT_COLUMNS = (
     "slide_channel",
     "pos",

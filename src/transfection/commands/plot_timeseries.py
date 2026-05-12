@@ -11,12 +11,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from transfection.analysis.roi import load_timeseries_csv
-from transfection.analysis.trace_fluor import trace_color_alpha_from_fluor_name
+from transfection import core as paths
+from transfection import core as plot_layout
+from transfection.commands import auc
+from transfection.core import (
+    infer_workspace_for_timeseries_dir,
+    load_slide_channel_labels,
+    load_timeseries_csv,
+    trace_color_alpha_from_fluor_name,
+)
 
-from . import auc, paths, plot_layout
-from .slide_labels import infer_workspace_for_timeseries_dir, load_slide_channel_labels
-
+NAME = "plot-timeseries"
 HELP = (
     f"Plot every metrics CSV in a {paths.TIMESERIES_DIRNAME}/ folder as subplots in two PNGs "
     f"(default: sibling {paths.RESULTS_DIRNAME}/traces.png and traces_shared_y.png). "
