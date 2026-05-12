@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Interactive helper to build --sample and run transfection slide config.
+# Interactive helper to build --sample and run transfection slide.
 # Dev: from repo root, run: bash transfection-slide.sh
 # Prod (transfection.zip): from extracted bundle root
 
@@ -129,11 +129,11 @@ if [[ -e "$output_path" ]]; then
 fi
 
 echo "" >&2
-echo "Running: $UV_EXE run transfection slide config ..." >&2
+echo "Running: $UV_EXE run transfection slide ..." >&2
 echo "" >&2
 
 set +e
-(cd "$REPO_ROOT" && "$UV_EXE" run transfection slide config \
+(cd "$REPO_ROOT" && "$UV_EXE" run transfection slide \
   --sample "$sample_arg" \
   --output "$output_path" \
   "${force_args[@]}")

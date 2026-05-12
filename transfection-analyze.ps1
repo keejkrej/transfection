@@ -1,4 +1,4 @@
-# Interactive pipeline for transfection analyze: timeseries, plots, AUC, fit.
+# Interactive pipeline for transfection timeseries, plots, AUC, and fit.
 # Run from repo: scripts live under scripts/; run from bundle: same folder as pyproject.toml and .uv/
 
 Set-StrictMode -Version Latest
@@ -50,7 +50,7 @@ if (Test-Path -LiteralPath $BundledUv) {
     Exit-Script 1
 }
 
-# Defaults for `transfection analyze fit` (defined here; always passed explicitly from this script).
+# Defaults for `transfection fit` (defined here; always passed explicitly from this script).
 $DefaultFitJobs = [Math]::Max(1, [Environment]::ProcessorCount)
 $DefaultMaxOnsetMinutes = 0.0
 
@@ -157,12 +157,12 @@ function Find-ResultsFitCsv {
     return $null
 }
 
-function Invoke-TransfectionAnalyze {
+function Invoke-Transfection {
     param([string[]]$ExprArgs)
     Push-Location $RepoRoot
     try {
-        Write-Host "`n>> $UvExe run transfection analyze $($ExprArgs -join ' ')`n" -ForegroundColor Cyan
-        $allArgs = @("run", "transfection", "analyze") + $ExprArgs
+        Write-Host "`n>> $UvExe run transfection $($ExprArgs -join ' ')`n" -ForegroundColor Cyan
+        $allArgs = @("run", "transfection") + $ExprArgs
         # Avoid capturing process stdout as function output (would make $code an Object[]).
         & $UvExe @allArgs | Out-Host
         return [int]$LASTEXITCODE
@@ -181,8 +181,8 @@ function Exit-IfFailed {
 
 Write-Host @"
 
-transfection analyze
---------------------
+transfection
+------------
 Runs in order: timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
 Analyze timeseries and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
 Requires roi/Pos* and slide.json when generating timeseries.
@@ -236,7 +236,7 @@ if ($runTimeseries) {
         $correctionArgs += @("--correction-quartile", $qIn.Trim())
     }
 
-    $code = Invoke-TransfectionAnalyze (@(
+    $code = Invoke-Transfection (@(
         "timeseries", $workspace,
         "--sample", $slidePath,
         "--jobs", "$fitJobs"
@@ -254,13 +254,13 @@ if ((Get-TimeseriesMetricsCount $workspace) -lt 1) {
     Exit-Script 1
 }
 
-$code = Invoke-TransfectionAnalyze @(
+$code = Invoke-Transfection @(
     "plot-timeseries", $tsDirForPlots,
     "--interval", $intervalStr
 )
 Exit-IfFailed $code "analyze plot-timeseries"
 
-$code = Invoke-TransfectionAnalyze @(
+$code = Invoke-Transfection @(
     "auc", $workspace,
     "--interval", $intervalStr
 )
@@ -272,10 +272,10 @@ if ([string]::IsNullOrEmpty($aucCsv)) {
     Exit-Script 1
 }
 
-$code = Invoke-TransfectionAnalyze @("plot-auc", $aucCsv)
+$code = Invoke-Transfection @("plot-auc", $aucCsv)
 Exit-IfFailed $code "analyze plot-auc"
 
-$code = Invoke-TransfectionAnalyze @(
+$code = Invoke-Transfection @(
     "fit", $workspace,
     "--interval", $intervalStr,
     "--jobs", "$fitJobs",
@@ -289,7 +289,7 @@ if ([string]::IsNullOrEmpty($fitCsv)) {
     Exit-Script 1
 }
 
-$code = Invoke-TransfectionAnalyze @(
+$code = Invoke-Transfection @(
     "plot-fit", $fitCsv,
     "--interval", $intervalStr
 )

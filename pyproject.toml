@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-transfection = "transfection.cli:main"
+transfection = "transfection.main:main"
 
 [build-system]
 requires = ["hatchling", "pathspec<0.13"]

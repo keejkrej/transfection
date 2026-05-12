@@ -1,4 +1,4 @@
-# Interactive helper to build --sample and run `transfection slide config`.
+# Interactive helper to build --sample and run `transfection slide`.
 # Run from repo: scripts live under scripts/; run from bundle: same folder as pyproject.toml and .uv/
 
 Set-StrictMode -Version Latest
@@ -149,13 +149,13 @@ if (Test-Path -LiteralPath $outputPath) {
     }
 }
 
-Write-Host "`nRunning: & `"$UvExe`" run transfection slide config ...`n" -ForegroundColor Cyan
+Write-Host "`nRunning: & `"$UvExe`" run transfection slide ...`n" -ForegroundColor Cyan
 
 $slideExitCode = 0
 Push-Location $RepoRoot
 try {
     $arguments = @(
-        "run", "transfection", "slide", "config",
+        "run", "transfection", "slide",
         "--sample", $sampleArg,
         "--output", $outputPath
     ) + $forceArgs

@@ -10,7 +10,6 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
-import typer
 
 from transfection.analysis.roi import load_timeseries_csv
 from transfection.analysis.trace_fluor import trace_color_alpha_from_fluor_name
@@ -183,39 +182,12 @@ def format_written_timeseries_plot_message(output_plot: Path) -> str:
     return f"Wrote plot: {output_plot}"
 
 
-def cli(
-    metrics_dir: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        metavar="TIMESERIES_DIR",
-        help=(
-            f"Directory of per-channel metrics CSVs (typically <workspace>/{paths.TIMESERIES_DIRNAME}). "
-            f"Default PNG is written alongside AUC/fit outputs under <workspace>/{paths.RESULTS_DIRNAME}/."
-        ),
-    ),
-    output: Path | None = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help=(
-            f"Primary output PNG path. Default: <workspace>/{paths.RESULTS_DIRNAME}/traces.png "
-            "with a companion traces_shared_y.png for unified y limits."
-        ),
-    ),
-    columns: int = typer.Option(
-        3,
-        "--columns",
-        min=1,
-        help="Number of subplot columns in the output grid.",
-    ),
-    interval: float = typer.Option(
-        ...,
-        "--interval",
-        min=0.0,
-        help="Minutes per frame index in metrics CSVs; x axis is t * interval (same as auc/fit).",
-    ),
+def run_command(
+    metrics_dir: Path,
+    *,
+    output: Path | None = None,
+    columns: int = 3,
+    interval: float,
 ) -> None:
     timeseries_csvs = paths.discover_timeseries_csvs(metrics_dir)
     results_dir = paths.workspace_results_dir(metrics_dir.parent)
@@ -231,13 +203,3 @@ def cli(
     )
     print(format_written_timeseries_plot_message(resolved_output_plot))
     print(format_written_timeseries_plot_message(resolved_shared_y_plot))
-
-
-def main(argv: list[str] | None = None, *, prog_name: str = "transfection analyze plot-timeseries") -> None:
-    from transfection.analyze.cli import run_subcommand
-
-    run_subcommand(cli, argv, prog_name=prog_name)
-
-
-if __name__ == "__main__":
-    main()

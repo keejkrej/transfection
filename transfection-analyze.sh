@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Interactive pipeline for transfection analyze: timeseries, plots, AUC, fit.
+# Interactive pipeline for transfection timeseries, plots, AUC, and fit.
 # Dev: from repo root, run: bash transfection-analyze.sh
 # Prod (transfection.zip): run from extracted bundle root after install.sh
 
@@ -130,9 +130,9 @@ find_results_fit_csv() {
 invoke_transfection_analyze() {
   local -a args=("$@")
   echo "" >&2
-  echo ">> $UV_EXE run transfection analyze ${args[*]}" >&2
+  echo ">> $UV_EXE run transfection ${args[*]}" >&2
   echo "" >&2
-  (cd "$REPO_ROOT" && exec "$UV_EXE" run transfection analyze "${args[@]}")
+  (cd "$REPO_ROOT" && exec "$UV_EXE" run transfection "${args[@]}")
 }
 
 exit_if_failed() {
@@ -146,8 +146,8 @@ exit_if_failed() {
 
 cat << 'EOF'
 
-transfection analyze
---------------------
+transfection
+------------
 Runs in order: timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
 Analyze timeseries and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
 Requires roi/Pos* and slide.json when generating timeseries.

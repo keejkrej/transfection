@@ -27,7 +27,7 @@ def discover_timeseries_csvs(timeseries_dir: Path) -> list[Path]:
     if not timeseries_dir.is_dir():
         raise ValueError(
             f"Expected {TIMESERIES_DIRNAME}/ directory at {timeseries_dir}. "
-            "Run transfection analyze timeseries first."
+            "Run transfection timeseries first."
         )
     csvs = sorted(timeseries_dir.glob("*.csv"), key=lambda path: path.name)
     if not csvs:

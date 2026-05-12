@@ -9,7 +9,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import typer
 
 from transfection.analysis.roi import load_timeseries_csv
 from transfection.analysis.trace_fluor import trace_color_alpha_from_fluor_name
@@ -258,37 +257,12 @@ def format_written_fit_plot_messages(output_plots: list[Path]) -> list[str]:
     return [f"Wrote plot: {output_plot}" for output_plot in output_plots]
 
 
-def cli(
-    fit_csv: Path = typer.Argument(
-        ...,
-        exists=True,
-        dir_okay=False,
-        metavar="FIT_CSV",
-        help=(
-            f"Must be <workspace>/{paths.RESULTS_DIRNAME}/fit.csv; sibling "
-            f"{paths.TIMESERIES_DIRNAME}/ supplies raw traces for the fitted-trace grid."
-        ),
-    ),
-    output: Path | None = typer.Option(
-        None,
-        "--output",
-        "-o",
-        file_okay=False,
-        dir_okay=True,
-        help="Directory for output PNGs. Default: same directory as the fit CSV.",
-    ),
-    interval: float = typer.Option(
-        ...,
-        "--interval",
-        min=0.0,
-        help="Frame interval in minutes used to reconstruct fitted traces against the sibling timeseries CSVs.",
-    ),
-    columns: int = typer.Option(
-        3,
-        "--columns",
-        min=1,
-        help="Number of subplot columns in the fitted-trace grid.",
-    ),
+def run_command(
+    fit_csv: Path,
+    *,
+    output: Path | None = None,
+    interval: float,
+    columns: int = 3,
 ) -> None:
     output_plots = run_plot_fit(
         fit_csv,
@@ -298,13 +272,3 @@ def cli(
     )
     for message in format_written_fit_plot_messages(output_plots):
         print(message)
-
-
-def main(argv: list[str] | None = None, *, prog_name: str = "transfection analyze plot-fit") -> None:
-    from transfection.analyze.cli import run_subcommand
-
-    run_subcommand(cli, argv, prog_name=prog_name)
-
-
-if __name__ == "__main__":
-    main()

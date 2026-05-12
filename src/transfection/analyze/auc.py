@@ -4,7 +4,6 @@ import re
 from pathlib import Path
 
 import pandas as pd
-import typer
 
 from transfection.analysis.roi import load_timeseries_csv
 
@@ -108,34 +107,13 @@ def format_written_auc_csv_message(output_csv: Path) -> str:
     return f"Wrote AUC CSV: {output_csv}"
 
 
-def cli(
-    workspace: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        metavar="WORKSPACE",
-        help=f"Workspace with {paths.TIMESERIES_DIRNAME}/ containing ROI metrics CSV files.",
-    ),
-    interval: float = typer.Option(
-        ...,
-        "--interval",
-        min=0.0,
-        help="Frame interval in minutes used to convert t into time before integration.",
-    ),
+def run_command(
+    workspace: Path,
+    *,
+    interval: float,
 ) -> None:
     timeseries_csvs = paths.discover_timeseries_csvs(paths.workspace_timeseries_dir(workspace))
     results_dir = paths.workspace_results_dir(workspace)
     output_csv = default_output_csv_path(timeseries_csvs, None, results_dir=results_dir)
     resolved_output_csv = run_auc(timeseries_csvs, interval=interval, output_csv=output_csv)
     print(format_written_auc_csv_message(resolved_output_csv))
-
-
-def main(argv: list[str] | None = None, *, prog_name: str = "transfection analyze auc") -> None:
-    from transfection.analyze.cli import run_subcommand
-
-    run_subcommand(cli, argv, prog_name=prog_name)
-
-
-if __name__ == "__main__":
-    main()

@@ -19,13 +19,13 @@ After installation, run:
 Windows:
 
 ```
-.uv/uv.exe run transfection ...
+.uv/uv.exe run transfection slide/timeseries/auc/fit/plot-timeseries/plot-auc/plot-fit ...
 ```
 
 Linux / macOS:
 
 ```
-.uv/uv run transfection ...
+.uv/uv run transfection slide/timeseries/auc/fit/plot-timeseries/plot-auc/plot-fit ...
 ```
 
 Optional pipelines (Windows PowerShell, from the same directory as `install.ps1`):
