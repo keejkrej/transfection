@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import tifffile
 
-HELP = "Microscopy ROI pipelines: slide mapping and timeseries metrics."
+HELP = "Microscopy ROI pipelines: slide mapping, segmentation masks, and timeseries metrics."
 PROG_NAME = "transfection"
 TIMESERIES_DIRNAME = "timeseries"
 RESULTS_DIRNAME = "results"
@@ -36,7 +36,8 @@ mpl.rcParams.update(_DEFAULT_RCPARAMS)
 @dataclass(frozen=True)
 class SlideChannelMapping:
     positions: list[int]
-    image_channel: int
+    signal_channel: int
+    mask_channel: int
     sample_name: str
 
 
@@ -143,7 +144,7 @@ def parse_slide_mapping_spec(
     for slide_channel, segment in enumerate(segments):
         if "@" not in segment or "#" not in segment:
             raise ValueError(
-                f"{source_label}: expected 'positions@image_channel#sample_name', got {segment!r}"
+                f"{source_label}: expected 'positions@signal_channel/mask_channel#sample_name', got {segment!r}"
             )
 
         before_hash, sample_name = segment.rsplit("#", 1)
@@ -154,16 +155,28 @@ def parse_slide_mapping_spec(
         before_hash = before_hash.strip()
         if "@" not in before_hash:
             raise ValueError(
-                f"{source_label}: expected 'positions@image_channel' before '#' ({segment!r})"
+                f"{source_label}: expected 'positions@signal_channel/mask_channel' before '#' ({segment!r})"
             )
-        positions_str, image_ch_str = before_hash.rsplit("@", 1)
-        positions_str, image_ch_str = positions_str.strip(), image_ch_str.strip()
+        positions_str, channels_str = before_hash.rsplit("@", 1)
+        positions_str, channels_str = positions_str.strip(), channels_str.strip()
+        if "/" not in channels_str:
+            raise ValueError(
+                f"{source_label}: expected both signal_channel and mask_channel separated by '/' "
+                f"for slide channel {slide_channel}"
+            )
+        signal_ch_str, mask_ch_str = (part.strip() for part in channels_str.split("/", 1))
 
         try:
-            image_channel = int(image_ch_str)
+            signal_channel = int(signal_ch_str)
         except ValueError as exc:
             raise ValueError(
-                f"{source_label}: image channel must be an integer for slide channel {slide_channel}"
+                f"{source_label}: signal channel must be an integer for slide channel {slide_channel}"
+            ) from exc
+        try:
+            mask_channel = int(mask_ch_str)
+        except ValueError as exc:
+            raise ValueError(
+                f"{source_label}: mask channel must be an integer for slide channel {slide_channel}"
             ) from exc
 
         try:
@@ -173,7 +186,8 @@ def parse_slide_mapping_spec(
 
         raw_mapping[slide_channel] = SlideChannelMapping(
             positions=positions,
-            image_channel=image_channel,
+            signal_channel=signal_channel,
+            mask_channel=mask_channel,
             sample_name=sample_name,
         )
 
@@ -198,7 +212,8 @@ def validate_slide_mapping(raw: object, *, source: Path | None = None) -> SlideM
 
         if isinstance(raw_entry, SlideChannelMapping):
             raw_positions = raw_entry.positions
-            raw_image_channel = raw_entry.image_channel
+            raw_signal_channel = raw_entry.signal_channel
+            raw_mask_channel = raw_entry.mask_channel
             raw_sample_name = raw_entry.sample_name
         else:
             if not isinstance(raw_entry, dict):
@@ -207,28 +222,39 @@ def validate_slide_mapping(raw: object, *, source: Path | None = None) -> SlideM
                 )
             if "positions" not in raw_entry:
                 raise ValueError(f"Slide channel {slide_channel} is missing required field 'positions'")
-            if "image_channel" not in raw_entry:
+            if "signal_channel" not in raw_entry:
                 raise ValueError(
-                    f"Slide channel {slide_channel} is missing required field 'image_channel'"
+                    f"Slide channel {slide_channel} is missing required field 'signal_channel'"
+                )
+            if "mask_channel" not in raw_entry:
+                raise ValueError(
+                    f"Slide channel {slide_channel} is missing required field 'mask_channel'"
                 )
             if "sample_name" not in raw_entry:
                 raise ValueError(
                     f"Slide channel {slide_channel} is missing required field 'sample_name'"
                 )
             raw_positions = raw_entry["positions"]
-            raw_image_channel = raw_entry["image_channel"]
+            raw_signal_channel = raw_entry["signal_channel"]
+            raw_mask_channel = raw_entry["mask_channel"]
             raw_sample_name = raw_entry["sample_name"]
 
         if not isinstance(raw_positions, list):
             raise ValueError(
                 f"Slide channel positions must be lists, got {type(raw_positions).__name__} for {slide_channel}"
             )
-        if not isinstance(raw_image_channel, int) or isinstance(raw_image_channel, bool):
+        if not isinstance(raw_signal_channel, int) or isinstance(raw_signal_channel, bool):
             raise ValueError(
-                f"Slide image_channel for channel {slide_channel} must be an integer, got {raw_image_channel!r}"
+                f"Slide signal_channel for channel {slide_channel} must be an integer, got {raw_signal_channel!r}"
             )
-        if raw_image_channel < 0:
-            raise ValueError(f"Slide image_channel must be non-negative, got {raw_image_channel}")
+        if raw_signal_channel < 0:
+            raise ValueError(f"Slide signal_channel must be non-negative, got {raw_signal_channel}")
+        if not isinstance(raw_mask_channel, int) or isinstance(raw_mask_channel, bool):
+            raise ValueError(
+                f"Slide mask_channel for channel {slide_channel} must be an integer, got {raw_mask_channel!r}"
+            )
+        if raw_mask_channel < 0:
+            raise ValueError(f"Slide mask_channel must be non-negative, got {raw_mask_channel}")
         if not isinstance(raw_sample_name, str):
             raise ValueError(
                 f"sample_name for slide channel {slide_channel} must be a string, got {raw_sample_name!r}"
@@ -250,7 +276,8 @@ def validate_slide_mapping(raw: object, *, source: Path | None = None) -> SlideM
             raise ValueError(f"{source_label} defines no positions for slide channel {slide_channel}")
         slide_positions[slide_channel] = SlideChannelMapping(
             positions=sorted(set(positions_list)),
-            image_channel=raw_image_channel,
+            signal_channel=raw_signal_channel,
+            mask_channel=raw_mask_channel,
             sample_name=sample_name,
         )
 
@@ -269,7 +296,8 @@ def serialize_slide_mapping(mapping: SlideMapping) -> str:
     ordered = {
         str(channel): {
             "positions": validated_mapping[channel].positions,
-            "image_channel": validated_mapping[channel].image_channel,
+            "signal_channel": validated_mapping[channel].signal_channel,
+            "mask_channel": validated_mapping[channel].mask_channel,
             "sample_name": validated_mapping[channel].sample_name,
         }
         for channel in sorted(validated_mapping)
@@ -384,6 +412,209 @@ def roi_frame_2d(
     return frame
 
 
+def workspace_mask_dir(workspace: Path) -> Path:
+    return workspace.resolve() / "mask"
+
+
+def position_mask_dir(workspace: Path, pos: int) -> Path:
+    return workspace_mask_dir(workspace) / f"Pos{pos}"
+
+
+def default_mask_path(
+    workspace: Path,
+    *,
+    position: int,
+    slide_channel: int,
+    mask_channel: int,
+    roi_file_name: str,
+) -> Path:
+    return (position_mask_dir(workspace, position) / Path(roi_file_name).name).resolve()
+
+
+def _box_mean_2d(image: np.ndarray, *, radius: int) -> np.ndarray:
+    if radius < 0:
+        raise ValueError(f"Variation radius must be >= 0, got {radius}")
+    if radius == 0:
+        return image.astype(np.float64, copy=False)
+
+    window = radius * 2 + 1
+    padded = np.pad(image.astype(np.float64, copy=False), ((radius, radius), (radius, radius)), mode="edge")
+    integral = np.pad(padded, ((1, 0), (1, 0)), mode="constant").cumsum(axis=0).cumsum(axis=1)
+    summed = (
+        integral[window:, window:]
+        - integral[:-window, window:]
+        - integral[window:, :-window]
+        + integral[:-window, :-window]
+    )
+    return summed / float(window * window)
+
+
+def variation_filter_2d(image: np.ndarray, *, radius: int) -> np.ndarray:
+    values = image.astype(np.float64, copy=False)
+    mean = _box_mean_2d(values, radius=radius)
+    mean_square = _box_mean_2d(values * values, radius=radius)
+    variance = np.maximum(mean_square - mean * mean, 0.0)
+    return np.sqrt(variance)
+
+
+def _gaussian_kernel_1d(sigma: float) -> np.ndarray:
+    if sigma <= 0:
+        return np.array([1.0], dtype=np.float64)
+    radius = max(1, int(np.ceil(sigma * 3.0)))
+    x = np.arange(-radius, radius + 1, dtype=np.float64)
+    kernel = np.exp(-(x * x) / (2.0 * sigma * sigma))
+    return kernel / kernel.sum()
+
+
+def _convolve_axis_reflect(image: np.ndarray, kernel: np.ndarray, axis: int) -> np.ndarray:
+    pad = len(kernel) // 2
+    if pad == 0:
+        return image
+    pad_width = [(0, 0)] * image.ndim
+    pad_width[axis] = (pad, pad)
+    padded = np.pad(image, pad_width, mode="edge")
+    return np.apply_along_axis(lambda row: np.convolve(row, kernel, mode="valid"), axis, padded)
+
+
+def gaussian_filter_2d(image: np.ndarray, *, sigma: float) -> np.ndarray:
+    if sigma < 0:
+        raise ValueError(f"Gaussian sigma must be >= 0, got {sigma}")
+    kernel = _gaussian_kernel_1d(sigma)
+    smoothed = _convolve_axis_reflect(image.astype(np.float64, copy=False), kernel, axis=0)
+    return _convolve_axis_reflect(smoothed, kernel, axis=1)
+
+
+def otsu_threshold(image: np.ndarray, *, bins: int = 256) -> float:
+    values = image[np.isfinite(image)].astype(np.float64, copy=False)
+    if values.size == 0:
+        raise ValueError("Cannot compute Otsu threshold for an empty image")
+
+    min_value = float(values.min())
+    max_value = float(values.max())
+    if min_value == max_value:
+        return min_value
+
+    hist, edges = np.histogram(values, bins=bins, range=(min_value, max_value))
+    centers = (edges[:-1] + edges[1:]) * 0.5
+    weight_foreground = np.cumsum(hist).astype(np.float64)
+    weight_background = float(values.size) - weight_foreground
+    intensity_sum = np.cumsum(hist * centers)
+    total_intensity_sum = intensity_sum[-1]
+
+    valid = (weight_foreground > 0) & (weight_background > 0)
+    if not np.any(valid):
+        return min_value
+
+    mean_foreground = np.zeros_like(centers)
+    mean_background = np.zeros_like(centers)
+    mean_foreground[valid] = intensity_sum[valid] / weight_foreground[valid]
+    mean_background[valid] = (total_intensity_sum - intensity_sum[valid]) / weight_background[valid]
+    variance = np.zeros_like(centers)
+    variance[valid] = (
+        weight_foreground[valid]
+        * weight_background[valid]
+        * np.square(mean_foreground[valid] - mean_background[valid])
+    )
+    return float(centers[int(np.argmax(variance))])
+
+
+def fill_binary_holes_2d(mask: np.ndarray) -> np.ndarray:
+    mask_bool = np.asarray(mask, dtype=bool)
+    if mask_bool.ndim != 2:
+        raise ValueError(f"Expected a 2D mask, got shape={mask_bool.shape}")
+
+    background = ~mask_bool
+    exterior = np.zeros(mask_bool.shape, dtype=bool)
+    stack: list[tuple[int, int]] = []
+
+    height, width = mask_bool.shape
+    for x in range(width):
+        if background[0, x]:
+            stack.append((0, x))
+        if height > 1 and background[height - 1, x]:
+            stack.append((height - 1, x))
+    for y in range(height):
+        if background[y, 0]:
+            stack.append((y, 0))
+        if width > 1 and background[y, width - 1]:
+            stack.append((y, width - 1))
+
+    while stack:
+        y, x = stack.pop()
+        if exterior[y, x] or not background[y, x]:
+            continue
+        exterior[y, x] = True
+        if y > 0:
+            stack.append((y - 1, x))
+        if y + 1 < height:
+            stack.append((y + 1, x))
+        if x > 0:
+            stack.append((y, x - 1))
+        if x + 1 < width:
+            stack.append((y, x + 1))
+
+    holes = background & ~exterior
+    return mask_bool | holes
+
+
+def segment_frame(
+    frame: np.ndarray,
+    *,
+    variation_radius: int,
+    gaussian_sigma: float,
+) -> np.ndarray:
+    varied = variation_filter_2d(frame, radius=variation_radius)
+    smoothed = gaussian_filter_2d(varied, sigma=gaussian_sigma)
+    threshold = otsu_threshold(smoothed)
+    return fill_binary_holes_2d(smoothed > threshold)
+
+
+def compute_roi_mask_stack(
+    pos_dir: Path,
+    index: PositionIndex,
+    roi: RoiCrop,
+    *,
+    channel: int,
+    variation_radius: int,
+    gaussian_sigma: float,
+) -> np.ndarray:
+    roi_path = pos_dir / roi.file_name
+    if not roi_path.is_file():
+        raise ValueError(f"Missing ROI TIFF referenced by index.json: {roi_path}")
+
+    stack = read_roi_stack(roi_path, roi.shape)
+    masks: list[np.ndarray] = []
+    for timepoint in range(index.time_count):
+        frame = roi_frame_2d(stack, index.axis_order, timepoint=timepoint, channel=channel)
+        masks.append(
+            segment_frame(
+                frame,
+                variation_radius=variation_radius,
+                gaussian_sigma=gaussian_sigma,
+            )
+        )
+    return np.stack(masks, axis=0).astype(np.uint8)
+
+
+def write_mask_tif(mask_stack: np.ndarray, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tifffile.imwrite(output_path, mask_stack.astype(np.uint8, copy=False))
+
+
+def read_mask_stack(mask_path: Path, *, time_count: int, frame_shape: tuple[int, int]) -> np.ndarray:
+    if not mask_path.is_file():
+        raise ValueError(f"Missing mask TIFF: {mask_path}. Run transfection segment first.")
+
+    raw_mask = np.asarray(tifffile.imread(mask_path))
+    if raw_mask.ndim == 2 and time_count == 1:
+        raw_mask = raw_mask[np.newaxis, :, :]
+    if raw_mask.shape != (time_count, *frame_shape):
+        raise ValueError(
+            f"{mask_path} shape mismatch: expected {(time_count, *frame_shape)}, got {raw_mask.shape}"
+        )
+    return raw_mask > 0
+
+
 def quantile_column_name(quartile: float) -> str:
     quartile_pct = quartile * 100.0
     if abs(quartile_pct - round(quartile_pct)) > 1e-9:
@@ -445,6 +676,69 @@ def compute_roi_metrics(
                     "area": int(patch.size),
                     "sum": sum_value,
                     **metrics,
+                }
+            )
+
+    if not rows:
+        raise ValueError("No rows produced")
+    return pd.DataFrame(rows).sort_values(["roi", "t"]).reset_index(drop=True)
+
+
+def compute_masked_roi_metrics(
+    workspace: Path,
+    pos_dir: Path,
+    index: PositionIndex,
+    *,
+    slide_channel: int,
+    channel: int,
+    mask_channel: int,
+) -> pd.DataFrame:
+    rows: list[dict[str, int | float | None]] = []
+    for roi in index.rois:
+        roi_path = pos_dir / roi.file_name
+        if not roi_path.is_file():
+            raise ValueError(f"Missing ROI TIFF referenced by index.json: {roi_path}")
+
+        stack = read_roi_stack(roi_path, roi.shape)
+        first_frame = roi_frame_2d(stack, index.axis_order, timepoint=0, channel=channel)
+        mask_path = default_mask_path(
+            workspace,
+            position=index.position,
+            slide_channel=slide_channel,
+            mask_channel=mask_channel,
+            roi_file_name=roi.file_name,
+        )
+        mask_stack = read_mask_stack(
+            mask_path,
+            time_count=index.time_count,
+            frame_shape=tuple(int(value) for value in first_frame.shape),
+        )
+
+        for timepoint in range(index.time_count):
+            frame = np.asarray(
+                roi_frame_2d(stack, index.axis_order, timepoint=timepoint, channel=channel),
+                dtype=np.float64,
+            )
+            mask = mask_stack[timepoint]
+            foreground = frame[mask]
+            background_pixels = frame[~mask]
+            area = int(mask.sum())
+            intensity = float(foreground.sum(dtype=np.float64)) if area else 0.0
+            background = float(background_pixels.mean(dtype=np.float64)) if background_pixels.size else 0.0
+            rows.append(
+                {
+                    "pos": index.position,
+                    "channel": channel,
+                    "t": timepoint,
+                    "roi": roi.roi,
+                    "x": roi.x,
+                    "y": roi.y,
+                    "w": roi.w,
+                    "h": roi.h,
+                    "area": area,
+                    "background": background,
+                    "intensity": intensity,
+                    "corrected": intensity - area * background,
                 }
             )
 

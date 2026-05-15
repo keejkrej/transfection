@@ -129,6 +129,15 @@ function Get-TimeseriesMetricsCount {
     ).Count
 }
 
+function Get-MaskTifCount {
+    param([string]$WorkspacePath)
+    $maskDir = Join-Path $WorkspacePath "mask"
+    if (-not (Test-Path -LiteralPath $maskDir -PathType Container)) { return 0 }
+    return @(
+        Get-ChildItem -LiteralPath $maskDir -Recurse -File -Filter "*.tif" -ErrorAction SilentlyContinue
+    ).Count
+}
+
 function Find-ResultsAucCsv {
     param([string]$WorkspacePath)
     $results = Join-Path $WorkspacePath "results"
@@ -183,9 +192,9 @@ Write-Host @"
 
 transfection
 ------------
-Runs in order: timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
-Analyze timeseries and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
-Requires roi/Pos* and slide.json when generating timeseries.
+Runs in order: segment (optional) -> timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
+Segment, timeseries, and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
+Requires roi/Pos* and slide.json when generating masks and timeseries.
 
 "@
 
@@ -214,7 +223,6 @@ if ($metricCount -gt 0) {
     }
 }
 
-$correctionArgs = @()
 $interval = Read-RequiredPositiveDouble "Frame interval in minutes (for plot-timeseries, auc, fit, plot-fit)"
 $intervalStr = $interval.ToString([System.Globalization.CultureInfo]::InvariantCulture)
 
@@ -230,17 +238,43 @@ if ($runTimeseries) {
     $slideIn = Read-Host "Path (Enter for default)"
     $slidePathRaw = if ([string]::IsNullOrWhiteSpace($slideIn)) { $slideDefault } else { $slideIn.Trim() }
     $slidePath = (Resolve-Path -LiteralPath $slidePathRaw).Path
-    Write-Host "Correction quartile for timeseries [0.25]"
-    $qIn = Read-Host "Value (Enter for default)"
-    if (-not [string]::IsNullOrWhiteSpace($qIn)) {
-        $correctionArgs += @("--correction-quartile", $qIn.Trim())
+
+    $maskCount = Get-MaskTifCount $workspace
+    $runSegment = $true
+    if ($maskCount -gt 0) {
+        Write-Host "mask/ already contains $maskCount mask TIFF files." -ForegroundColor Yellow
+        while ($true) {
+            $c = Read-Host "[D]elete mask/ and regenerate, or [S]kip segment (use existing masks)"
+            $k = if ($null -eq $c) { "" } else { $c.Trim().ToUpperInvariant() }
+            if ($k -eq "D") {
+                $maskDir = Join-Path $workspace "mask"
+                Remove-Item -LiteralPath $maskDir -Recurse -Force
+                Write-Host "Removed mask/." -ForegroundColor Yellow
+                $runSegment = $true
+                break
+            }
+            if ($k -eq "S") {
+                $runSegment = $false
+                break
+            }
+            Write-Host "Enter D or S." -ForegroundColor Yellow
+        }
     }
 
-    $code = Invoke-Transfection (@(
+    if ($runSegment) {
+        $code = Invoke-Transfection @(
+            "segment", $workspace,
+            "--sample", $slidePath,
+            "--jobs", "$fitJobs"
+        )
+        Exit-IfFailed $code "analyze segment"
+    }
+
+    $code = Invoke-Transfection @(
         "timeseries", $workspace,
         "--sample", $slidePath,
         "--jobs", "$fitJobs"
-    ) + $correctionArgs)
+    )
     Exit-IfFailed $code "analyze timeseries"
 }
 

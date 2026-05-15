@@ -90,8 +90,8 @@ Write-Host @"
 transfection slide
 ------------------
 Slide channel ids are assigned automatically (0, 1, 2, ... in entry order; not part of --sample text).
-Each mapping: sample_name, then image channel, then positions (e.g. 10,11 or 0:12 for a range).
-Compact fragments look like positions@image_channel#sample_name and are joined with | for --sample.
+Each mapping: sample_name, then signal channel, mask channel, then positions (e.g. 10,11 or 0:12 for a range).
+Compact fragments look like positions@signal_channel/mask_channel#sample_name and are joined with | for --sample.
 Do not use | # @ in the sample_name (they are syntax characters).
 
 "@
@@ -116,14 +116,15 @@ while ($true) {
         continue
     }
 
-    $imageCh = Read-RequiredNonNegativeInt "Image channel"
+    $signalCh = Read-RequiredNonNegativeInt "Signal channel"
+    $maskCh = Read-RequiredNonNegativeInt "Mask channel"
     $positions = Read-RequiredNonEmpty "Positions (e.g. 10,11 or 0:12 for a range)"
 
     $slideCh = $nextSlideCh
     $nextSlideCh++
-    $compact = "${positions}@${imageCh}#${name}"
+    $compact = "${positions}@${signalCh}/${maskCh}#${name}"
     $segments.Add($compact)
-    Write-Host "Added slide_channel=$slideCh | positions=$positions | image_channel=$imageCh | sample_name=$name" -ForegroundColor Green
+    Write-Host "Added slide_channel=$slideCh | positions=$positions | signal_channel=$signalCh | mask_channel=$maskCh | sample_name=$name" -ForegroundColor Green
     Write-Host "  (compact --sample fragment: $compact)`n" -ForegroundColor DarkGray
 }
 

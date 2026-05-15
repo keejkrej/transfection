@@ -39,5 +39,5 @@ def _print_mapping(mapping: SlideMapping) -> None:
         positions = ", ".join(str(pos) for pos in entry.positions)
         print(
             f"  slide_channel={slide_channel} sample_name={entry.sample_name!r} "
-            f"image_channel={entry.image_channel} positions={positions}"
+            f"signal_channel={entry.signal_channel} mask_channel={entry.mask_channel} positions={positions}"
         )

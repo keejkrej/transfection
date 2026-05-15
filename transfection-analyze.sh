@@ -111,6 +111,12 @@ get_timeseries_metrics_count() {
   echo "$n"
 }
 
+get_mask_tif_count() {
+  local ws="$1" d="$ws/mask"
+  [[ -d "$d" ]] || { echo 0; return 0; }
+  find "$d" -type f -name '*.tif' | wc -l | tr -d '[:space:]'
+}
+
 find_results_auc_csv() {
   local ws="$1" r="$ws/results" f
   [[ -d "$r" ]] || { echo ""; return 0; }
@@ -148,9 +154,9 @@ cat << 'EOF'
 
 transfection
 ------------
-Runs in order: timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
-Analyze timeseries and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
-Requires roi/Pos* and slide.json when generating timeseries.
+Runs in order: segment (optional) -> timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
+Segment, timeseries, and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
+Requires roi/Pos* and slide.json when generating masks and timeseries.
 
 EOF
 
@@ -183,7 +189,6 @@ echo "Analyze timeseries & fit - set --jobs and (for fit) --max-onset-minutes (d
 fit_jobs="$(read_positive_int_with_default "Worker processes for timeseries & fit (--jobs)" "$DEFAULT_FIT_JOBS")"
 fit_max_onset="$(read_nonnegative_double_with_default "Max onset minutes (--max-onset-minutes)" "$DEFAULT_MAX_ONSET")"
 
-correction_args=()
 if [[ "$run_timeseries" -eq 1 ]]; then
   slide_default="${workspace}/slide.json"
   echo "Slide mapping JSON path [default: $slide_default]" >&2
@@ -194,18 +199,41 @@ if [[ "$run_timeseries" -eq 1 ]]; then
   if [[ ! -f "$slide_path" ]]; then echo "Slide file not found: $slide_path" >&2; exit 1; fi
   slide_path="$(cd "$(dirname "$slide_path")" && pwd)/$(basename "$slide_path")"
 
-  echo "Correction quartile for timeseries [0.25]" >&2
-  read -r -p "Value (Enter for default): " q_in || exit 1
-  q_in="${q_in#"${q_in%%[![:space:]]*}"}"
-  q_in="${q_in%"${q_in##*[![:space:]]}"}"
-  if [[ -n "$q_in" ]]; then correction_args+=(--correction-quartile "$q_in"); fi
+  mask_count="$(get_mask_tif_count "$workspace")"
+  run_segment=1
+  if [[ "$mask_count" -gt 0 ]]; then
+    echo "mask/ already contains $mask_count mask TIFF files." >&2
+    while true; do
+      read -r -p "[D]elete mask/ and regenerate, or [S]kip segment (use existing masks): " c || exit 1
+      k=$(printf '%s' "$c" | tr '[:lower:]' '[:upper:]')
+      k="${k#"${k%%[![:space:]]*}"}"
+      if [[ "$k" == "D" ]]; then
+        rm -rf "${workspace%/}/mask"
+        echo "Removed mask/." >&2
+        run_segment=1
+        break
+      fi
+      if [[ "$k" == "S" ]]; then run_segment=0; break; fi
+      echo "Enter D or S." >&2
+    done
+  fi
+
+  if [[ "$run_segment" -eq 1 ]]; then
+    set +e
+    invoke_transfection_analyze \
+      segment "$workspace" \
+      --sample "$slide_path" \
+      --jobs "$fit_jobs"
+    code=$?
+    set -e
+    exit_if_failed "$code" "analyze segment"
+  fi
 
   set +e
   invoke_transfection_analyze \
     timeseries "$workspace" \
     --sample "$slide_path" \
-    --jobs "$fit_jobs" \
-    "${correction_args[@]}"
+    --jobs "$fit_jobs"
   code=$?
   set -e
   exit_if_failed "$code" "analyze timeseries"

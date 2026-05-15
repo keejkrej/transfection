@@ -7,11 +7,13 @@ from typing import Annotated
 import typer
 
 from transfection import core
+from transfection.commands import check_segment as check_segment_command
 from transfection.commands import auc as auc_command
 from transfection.commands import fit as fit_command
 from transfection.commands import plot_auc as plot_auc_command
 from transfection.commands import plot_fit as plot_fit_command
 from transfection.commands import plot_timeseries as plot_timeseries_command
+from transfection.commands import segment as segment_command
 from transfection.commands import slide as slide_command
 from transfection.commands import timeseries as timeseries_command
 
@@ -25,9 +27,10 @@ def slide(
         typer.Option(
             "--sample",
             help=(
-                'Pipe-separated segments "positions@image_channel#sample_name" in entry order '
+                'Pipe-separated segments "positions@signal_channel/mask_channel#sample_name" in entry order '
                 "(slide_channel keys in slide.json are 0, 1, 2, ...). "
-                'Example: --sample "10,11@2#condA|20@1#condB". Positions use commas and slices; '
+                "Use signal_channel for intensity and mask_channel for segmentation. "
+                'Example: --sample "10,11@2/0#condA|20@1/0#condB". Positions use commas and slices; '
                 "each segment requires #sample_name."
             ),
         ),
@@ -54,6 +57,133 @@ def slide(
     slide_command.run_command(sample=sample, output=output, force=force)
 
 
+@app.command(check_segment_command.NAME, help=check_segment_command.HELP)
+def check_segment(
+    workspace: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            metavar="WORKSPACE",
+            help="Workspace containing roi/PosN/index.json, Roi*.tif files, masks, and slide.json.",
+        ),
+    ],
+    sample: Annotated[
+        Path,
+        typer.Option(
+            "--sample",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help="Slide mapping JSON with signal_channel and mask_channel per slide channel.",
+        ),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            file_okay=False,
+            dir_okay=True,
+            help="Directory for MP4 outputs. Default: <workspace>/check-segment/.",
+        ),
+    ] = None,
+    fps: Annotated[
+        float,
+        typer.Option(
+            "--fps",
+            min=0.001,
+            help="Frames per second for each check-segment MP4.",
+        ),
+    ] = 6.0,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Overwrite existing MP4 files.",
+        ),
+    ] = False,
+) -> None:
+    check_segment_command.run_command(
+        workspace=workspace,
+        sample=sample,
+        output=output,
+        fps=fps,
+        force=force,
+    )
+
+
+@app.command(segment_command.NAME, help=segment_command.HELP)
+def segment(
+    workspace: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            metavar="WORKSPACE",
+            help="Workspace containing roi/PosN/index.json and Roi*.tif files.",
+        ),
+    ],
+    sample: Annotated[
+        Path,
+        typer.Option(
+            "--sample",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help=(
+                "Microscopy slide mapping JSON per slide_channel: positions, signal_channel, mask_channel, "
+                "and sample_name. "
+                "Masks are written for every mapped position and ROI."
+            ),
+        ),
+    ],
+    variation_radius: Annotated[
+        int,
+        typer.Option(
+            "--variation-radius",
+            min=0,
+            help="Radius in pixels for the local variation filter before Gaussian smoothing.",
+        ),
+    ] = 2,
+    gaussian_sigma: Annotated[
+        float,
+        typer.Option(
+            "--gaussian-sigma",
+            min=0.0,
+            help="Sigma in pixels for Gaussian smoothing after local variation filtering.",
+        ),
+    ] = 1.0,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Overwrite existing mask TIFF files.",
+        ),
+    ] = False,
+    jobs: Annotated[
+        int,
+        typer.Option(
+            "--jobs",
+            min=1,
+            help="Number of worker processes to use across per-position segmentations.",
+        ),
+    ] = 1,
+) -> None:
+    segment_command.run_command(
+        workspace=workspace,
+        sample=sample,
+        variation_radius=variation_radius,
+        gaussian_sigma=gaussian_sigma,
+        force=force,
+        jobs=jobs,
+    )
+
+
 @app.command(timeseries_command.NAME, help=timeseries_command.HELP)
 def timeseries(
     workspace: Annotated[
@@ -74,17 +204,26 @@ def timeseries(
             file_okay=True,
             dir_okay=False,
             help=(
-                "Microscopy slide mapping JSON per slide_channel: positions, image_channel, and sample_name. "
+                "Microscopy slide mapping JSON per slide_channel: positions, signal_channel, mask_channel, "
+                "and sample_name. "
                 "Process every position from every slide channel in the file and write "
                 "one CSV per slide channel."
             ),
         ),
     ],
+    mask_channel: Annotated[
+        int | None,
+        typer.Option(
+            "--mask-channel",
+            min=0,
+            help="Override mask TIFF channel to read. Defaults to each slide mapping's mask_channel.",
+        ),
+    ] = None,
     correction_quartile: Annotated[
         float,
         typer.Option(
             "--correction-quartile",
-            help="Single quartile used to compute the corrected intensity column.",
+            help="Deprecated; timeseries now uses segment masks for background correction.",
         ),
     ] = timeseries_command.DELIVERY_CORRECTION_QUARTILE,
     jobs: Annotated[
@@ -104,6 +243,7 @@ def timeseries(
     timeseries_command.run_command(
         workspace=workspace,
         sample=sample,
+        mask_channel=mask_channel,
         correction_quartile=correction_quartile,
         jobs=jobs,
     )

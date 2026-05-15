@@ -66,8 +66,8 @@ cat << 'EOF'
 transfection slide
 ------------------
 Slide channel ids are assigned automatically (0, 1, 2, ... in entry order; not part of --sample text).
-Each mapping: sample_name, then image channel, then positions (e.g. 10,11 or 0:12 for a range).
-Compact fragments look like positions@image_channel#sample_name and are joined with | for --sample.
+Each mapping: sample_name, then signal channel, mask channel, then positions (e.g. 10,11 or 0:12 for a range).
+Compact fragments look like positions@signal_channel/mask_channel#sample_name and are joined with | for --sample.
 Do not use | # @ in the sample_name (they are syntax characters).
 
 EOF
@@ -93,14 +93,15 @@ while true; do
     continue
   fi
 
-  image_ch="$(read_nonnegative_int "Image channel")"
+  signal_ch="$(read_nonnegative_int "Signal channel")"
+  mask_ch="$(read_nonnegative_int "Mask channel")"
   positions="$(read_nonempty "Positions (e.g. 10,11 or 0:12 for a range)")"
 
   slide_ch=$next_slide_ch
   next_slide_ch=$((next_slide_ch + 1))
-  compact="${positions}@${image_ch}#${name}"
+  compact="${positions}@${signal_ch}/${mask_ch}#${name}"
   segments+=("$compact")
-  echo "Added slide_channel=$slide_ch | positions=$positions | image_channel=$image_ch | sample_name=$name" >&2
+  echo "Added slide_channel=$slide_ch | positions=$positions | signal_channel=$signal_ch | mask_channel=$mask_ch | sample_name=$name" >&2
   echo "  (compact --sample fragment: $compact)" >&2
   echo "" >&2
 done

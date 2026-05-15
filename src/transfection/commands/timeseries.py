@@ -11,10 +11,9 @@ import pandas as pd
 
 from transfection.core import (
     SlideChannelMapping,
-    compute_roi_metrics,
+    compute_masked_roi_metrics,
     load_slide_mapping,
     position_dir,
-    quantile_column_name,
     read_position_index,
     validate_channel_index,
     write_metrics_csv,
@@ -24,11 +23,11 @@ from transfection.core import (
 NAME = "timeseries"
 HELP = (
     "Read cropped ROI TIFF timelapses from roi/PosN, compute per-ROI intensity "
-    "metrics for each slide channel's mapped image channel, and write one long-form CSV "
-    "per slide channel as scS_chC.csv under <workspace>/timeseries/."
+    "metrics using segment masks for each slide channel's mapped signal channel, and write "
+    "one long-form CSV per slide channel as scS_chC.csv under <workspace>/timeseries/."
 )
 
-OUTPUT_COLUMNS = ("pos", "roi", "t", "corrected")
+OUTPUT_COLUMNS = ("pos", "roi", "t", "area", "background", "intensity", "corrected")
 DELIVERY_CORRECTION_QUARTILE = 0.25
 CsvWrittenCallback = Callable[[int, Path, int], None]
 
@@ -45,9 +44,9 @@ load_slide_position_groups = load_slide_mapping
 def default_slide_timeseries_csv_path(
     workspace: Path,
     slide_channel: int,
-    image_channel: int,
+    signal_channel: int,
 ) -> Path:
-    csv_path = workspace / "timeseries" / f"sc{slide_channel}_ch{image_channel}.csv"
+    csv_path = workspace / "timeseries" / f"sc{slide_channel}_ch{signal_channel}.csv"
     return csv_path.resolve()
 
 
@@ -62,49 +61,45 @@ def simplify_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def apply_delivery_correction(df: pd.DataFrame, *, correction_quartile: float = DELIVERY_CORRECTION_QUARTILE) -> pd.DataFrame:
-    corrected_column = quantile_column_name(correction_quartile)
-    if corrected_column not in df.columns:
-        raise ValueError(
-            f"Quartiles must include {correction_quartile:.2f} so delivery corrected intensity can be computed"
-        )
-
-    corrected_df = df.copy()
-    corrected_df["corrected"] = corrected_df["sum"] - corrected_df["area"] * corrected_df[corrected_column]
-    return corrected_df
+    return df
 
 
 def _run_position_metrics(
     workspace: Path,
     *,
     slide_channel: int,
-    image_channel: int,
+    signal_channel: int,
+    mask_channel: int,
     resolved_pos: int,
     correction_quartile: float,
 ) -> tuple[int, int, int, pd.DataFrame | None]:
     try:
         pos_dir = position_dir(workspace, resolved_pos)
     except ValueError:
-        return (slide_channel, image_channel, resolved_pos, None)
+        return (slide_channel, signal_channel, resolved_pos, None)
 
     index = read_position_index(pos_dir)
-    validate_channel_index(index, image_channel)
-    metrics_df = compute_roi_metrics(
+    validate_channel_index(index, signal_channel)
+    metrics_df = compute_masked_roi_metrics(
+        workspace,
         pos_dir,
         index,
-        channel=image_channel,
-        quartiles=[correction_quartile],
+        slide_channel=slide_channel,
+        channel=signal_channel,
+        mask_channel=mask_channel,
     )
-    return (slide_channel, image_channel, resolved_pos, metrics_df)
+    return (slide_channel, signal_channel, resolved_pos, metrics_df)
 
 
 def _position_timeseries_task(
-    payload: tuple[str, int, int, int, float],
+    payload: tuple[str, int, int, int, int, float],
 ) -> tuple[int, int, int, pd.DataFrame | None]:
-    workspace_str, slide_channel, image_channel, resolved_pos, correction_quartile = payload
+    workspace_str, slide_channel, signal_channel, mask_channel, resolved_pos, correction_quartile = payload
     return _run_position_metrics(
         Path(workspace_str),
         slide_channel=slide_channel,
-        image_channel=image_channel,
+        signal_channel=signal_channel,
+        mask_channel=mask_channel,
         resolved_pos=resolved_pos,
         correction_quartile=correction_quartile,
     )
@@ -114,7 +109,7 @@ def _write_slide_channel_csv(
     workspace: Path,
     *,
     slide_channel: int,
-    image_channel: int,
+    signal_channel: int,
     position_metrics_dfs: list[pd.DataFrame],
     correction_quartile: float,
 ) -> tuple[Path, int]:
@@ -122,12 +117,10 @@ def _write_slide_channel_csv(
     resolved_output_csv = default_slide_timeseries_csv_path(
         workspace=workspace,
         slide_channel=slide_channel,
-        image_channel=image_channel,
+        signal_channel=signal_channel,
     )
     write_metrics_csv(
-        simplify_metrics(
-            apply_delivery_correction(combined_df, correction_quartile=correction_quartile)
-        ),
+        simplify_metrics(combined_df),
         resolved_output_csv,
     )
     return (resolved_output_csv, len(position_metrics_dfs))
@@ -139,7 +132,7 @@ class SlideChannelTimeseriesWriter:
 
     workspace: Path
     slide_channel: int
-    image_channel: int
+    signal_channel: int
     correction_quartile: float
     _pending_positions: list[int]
     _metrics_dfs: list[pd.DataFrame] = field(default_factory=list, repr=False)
@@ -161,7 +154,7 @@ class SlideChannelTimeseriesWriter:
         written = _write_slide_channel_csv(
             self.workspace,
             slide_channel=self.slide_channel,
-            image_channel=self.image_channel,
+            signal_channel=self.signal_channel,
             position_metrics_dfs=self._metrics_dfs,
             correction_quartile=self.correction_quartile,
         )
@@ -179,7 +172,7 @@ def _receivers_for_slide(
         receivers[slide_channel] = SlideChannelTimeseriesWriter(
             workspace=workspace,
             slide_channel=slide_channel,
-            image_channel=entry.image_channel,
+            signal_channel=entry.signal_channel,
             correction_quartile=correction_quartile,
             _pending_positions=list(entry.positions),
         )
@@ -193,7 +186,7 @@ def _consume_position_row(
     skipped_positions: dict[int, list[int]],
     written_by_channel: dict[int, tuple[Path, int]],
 ) -> None:
-    slide_channel, _image_channel, resolved_pos, metrics_df = row
+    slide_channel, _signal_channel, resolved_pos, metrics_df = row
     if metrics_df is None:
         skipped_positions.setdefault(slide_channel, []).append(resolved_pos)
     written = receivers[slide_channel].observe(resolved_pos, metrics_df)
@@ -205,6 +198,7 @@ def run_slide_timeseries(
     workspace: Path,
     *,
     sample: Path,
+    mask_channel: int | None = None,
     correction_quartile: float = DELIVERY_CORRECTION_QUARTILE,
     on_csv_written: CsvWrittenCallback | None = None,
     jobs: int = 1,
@@ -213,11 +207,17 @@ def run_slide_timeseries(
         raise ValueError(f"--jobs must be >= 1, got {jobs}")
     workspace = workspace.resolve()
     slide_path = sample.resolve()
-    quantile_column_name(correction_quartile)
     slide_positions = load_slide_mapping(slide_path)
     channel_order = [slide_channel for slide_channel, _ in slide_positions.items()]
-    position_tasks: list[tuple[str, int, int, int, float]] = [
-        (str(workspace), slide_channel, entry.image_channel, resolved_pos, correction_quartile)
+    position_tasks: list[tuple[str, int, int, int, int, float]] = [
+        (
+            str(workspace),
+            slide_channel,
+            entry.signal_channel,
+            entry.mask_channel if mask_channel is None else mask_channel,
+            resolved_pos,
+            correction_quartile,
+        )
         for slide_channel, entry in slide_positions.items()
         for resolved_pos in entry.positions
     ]
@@ -230,11 +230,12 @@ def run_slide_timeseries(
     written_by_channel: dict[int, tuple[Path, int]] = {}
 
     if jobs == 1 or len(position_tasks) <= 1:
-        for ws_str, slide_channel, image_channel, resolved_pos, cq in position_tasks:
+        for ws_str, slide_channel, signal_channel, task_mask_channel, resolved_pos, cq in position_tasks:
             row = _run_position_metrics(
                 Path(ws_str),
                 slide_channel=slide_channel,
-                image_channel=image_channel,
+                signal_channel=signal_channel,
+                mask_channel=task_mask_channel,
                 resolved_pos=resolved_pos,
                 correction_quartile=cq,
             )
@@ -310,12 +311,14 @@ def run_command(
     workspace: Path,
     *,
     sample: Path,
+    mask_channel: int | None = None,
     correction_quartile: float = DELIVERY_CORRECTION_QUARTILE,
     jobs: int = 1,
 ) -> None:
     result = run_slide_timeseries(
         workspace,
         sample=sample,
+        mask_channel=mask_channel,
         correction_quartile=correction_quartile,
         on_csv_written=lambda slide_channel, resolved_output_csv, position_count: print(
             format_written_timeseries_csv_message(slide_channel, resolved_output_csv, position_count)
