@@ -22,7 +22,7 @@ from transfection.core import (
 
 NAME = "check-segment"
 HELP = (
-    "Overlay mask contours on the ROI TIFF mask channel and write MP4 review videos "
+    "Overlay mask contours on the ROI TIFF signal and mask channels and write MP4 review videos "
     "under <workspace>/check-segment/PosN/."
 )
 REVIEW_FRAME_SIZE = 512
@@ -38,8 +38,8 @@ def default_output_dir(workspace: Path) -> Path:
     return (workspace.resolve() / "check-segment").resolve()
 
 
-def default_video_path(output_dir: Path, *, position: int, roi: RoiCrop) -> Path:
-    return (output_dir / f"Pos{position}" / f"{Path(roi.file_name).stem}.mp4").resolve()
+def default_video_path(output_dir: Path, *, position: int, roi: RoiCrop, channel: int) -> Path:
+    return (output_dir / f"Pos{position}" / f"{Path(roi.file_name).stem}_ch{channel}.mp4").resolve()
 
 
 def _normalization_bounds(frames: np.ndarray) -> tuple[float, float]:
@@ -134,11 +134,11 @@ def review_frame(rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return overlay_contour(fitted_rgb, fitted_mask)
 
 
-def roi_mask_channel_frames(pos_dir: Path, index, roi: RoiCrop, *, mask_channel: int) -> np.ndarray:
+def roi_channel_frames(pos_dir: Path, index, roi: RoiCrop, *, channel: int) -> np.ndarray:
     stack = read_roi_stack(pos_dir / roi.file_name, roi.shape)
     frames = [
         np.asarray(
-            roi_frame_2d(stack, index.axis_order, timepoint=timepoint, channel=mask_channel),
+            roi_frame_2d(stack, index.axis_order, timepoint=timepoint, channel=channel),
             dtype=np.float64,
         )
         for timepoint in range(index.time_count)
@@ -148,34 +148,20 @@ def roi_mask_channel_frames(pos_dir: Path, index, roi: RoiCrop, *, mask_channel:
 
 def write_check_segment_video(
     *,
-    workspace: Path,
     output_dir: Path,
     position: int,
-    slide_channel: int,
-    mapping: SlideChannelMapping,
+    pos_dir: Path,
+    index,
     roi: RoiCrop,
+    source_channel: int,
+    mask_stack: np.ndarray,
     fps: float,
     force: bool,
 ) -> CheckSegmentVideo:
-    pos_dir = position_dir(workspace, position)
-    index = read_position_index(pos_dir)
-    validate_channel_index(index, mapping.mask_channel)
+    validate_channel_index(index, source_channel)
+    frames = roi_channel_frames(pos_dir, index, roi, channel=source_channel)
 
-    frames = roi_mask_channel_frames(pos_dir, index, roi, mask_channel=mapping.mask_channel)
-    mask_path = default_mask_path(
-        workspace,
-        position=index.position,
-        slide_channel=slide_channel,
-        mask_channel=mapping.mask_channel,
-        roi_file_name=roi.file_name,
-    )
-    mask_stack = read_mask_stack(
-        mask_path,
-        time_count=index.time_count,
-        frame_shape=tuple(int(value) for value in frames[0].shape),
-    )
-
-    output_path = default_video_path(output_dir, position=index.position, roi=roi)
+    output_path = default_video_path(output_dir, position=position, roi=roi, channel=source_channel)
     if output_path.exists() and not force:
         return CheckSegmentVideo(output_path=output_path, frame_count=index.time_count)
 
@@ -187,6 +173,10 @@ def write_check_segment_video(
             writer.append_data(pad_to_even_dimensions(review_frame(rgb, mask)))
 
     return CheckSegmentVideo(output_path=output_path, frame_count=index.time_count)
+
+
+def _review_channels(mapping: SlideChannelMapping) -> list[int]:
+    return sorted({mapping.mask_channel, mapping.signal_channel})
 
 
 def run_check_segment(
@@ -208,19 +198,36 @@ def run_check_segment(
         for position in mapping.positions:
             pos_dir = position_dir(workspace, position)
             index = read_position_index(pos_dir)
+            validate_channel_index(index, mapping.mask_channel)
+            review_channels = _review_channels(mapping)
             for roi in index.rois:
-                videos.append(
-                    write_check_segment_video(
-                        workspace=workspace,
-                        output_dir=output_dir,
-                        position=position,
-                        slide_channel=slide_channel,
-                        mapping=mapping,
-                        roi=roi,
-                        fps=fps,
-                        force=force,
-                    )
+                mask_reference_frames = roi_channel_frames(pos_dir, index, roi, channel=mapping.mask_channel)
+                mask_path = default_mask_path(
+                    workspace,
+                    position=index.position,
+                    slide_channel=slide_channel,
+                    mask_channel=mapping.mask_channel,
+                    roi_file_name=roi.file_name,
                 )
+                mask_stack = read_mask_stack(
+                    mask_path,
+                    time_count=index.time_count,
+                    frame_shape=tuple(int(value) for value in mask_reference_frames[0].shape),
+                )
+                for channel in review_channels:
+                    videos.append(
+                        write_check_segment_video(
+                            output_dir=output_dir,
+                            position=position,
+                            pos_dir=pos_dir,
+                            index=index,
+                            roi=roi,
+                            source_channel=channel,
+                            mask_stack=mask_stack,
+                            fps=fps,
+                            force=force,
+                        )
+                    )
     if not videos:
         raise ValueError("No check-segment videos produced")
     return videos

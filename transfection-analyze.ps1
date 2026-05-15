@@ -192,7 +192,7 @@ Write-Host @"
 
 transfection
 ------------
-Runs in order: segment (optional) -> timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
+Runs in order: segment (optional) -> check-segment -> timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
 Segment, timeseries, and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
 Requires roi/Pos* and slide.json when generating masks and timeseries.
 
@@ -268,6 +268,13 @@ if ($runTimeseries) {
             "--jobs", "$fitJobs"
         )
         Exit-IfFailed $code "analyze segment"
+
+        $code = Invoke-Transfection @(
+            "check-segment", $workspace,
+            "--sample", $slidePath,
+            "--force"
+        )
+        Exit-IfFailed $code "analyze check-segment"
     }
 
     $code = Invoke-Transfection @(

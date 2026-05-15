@@ -154,7 +154,7 @@ cat << 'EOF'
 
 transfection
 ------------
-Runs in order: segment (optional) -> timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
+Runs in order: segment (optional) -> check-segment -> timeseries (optional) -> plot-timeseries -> auc -> plot-auc -> fit -> plot-fit
 Segment, timeseries, and fit share --jobs; plot-timeseries, auc, fit, and plot-fit share --interval (minutes per frame); fit also receives --max-onset-minutes (defaults from this script, Enter to accept).
 Requires roi/Pos* and slide.json when generating masks and timeseries.
 
@@ -227,6 +227,15 @@ if [[ "$run_timeseries" -eq 1 ]]; then
     code=$?
     set -e
     exit_if_failed "$code" "analyze segment"
+
+    set +e
+    invoke_transfection_analyze \
+      check-segment "$workspace" \
+      --sample "$slide_path" \
+      --force
+    code=$?
+    set -e
+    exit_if_failed "$code" "analyze check-segment"
   fi
 
   set +e
