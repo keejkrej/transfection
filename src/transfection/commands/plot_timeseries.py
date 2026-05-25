@@ -3,9 +3,11 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from pathlib import Path
+from typing import Annotated
 
 import matplotlib
 import numpy as np
+import typer
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -13,6 +15,7 @@ import pandas as pd
 
 from transfection import core as paths
 from transfection import core as plot_layout
+from transfection.app import app
 from transfection.commands import auc
 from transfection.core import (
     infer_workspace_for_timeseries_dir,
@@ -240,12 +243,48 @@ def format_written_timeseries_plot_message(output_plot: Path) -> str:
     return f"Wrote plot: {output_plot}"
 
 
-def run_command(
-    metrics_dir: Path,
-    *,
-    output: Path | None = None,
-    columns: int = 3,
-    interval: float,
+@app.command(NAME, help=HELP)
+def plot_timeseries(
+    metrics_dir: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            metavar="TIMESERIES_DIR",
+            help=(
+                f"Directory of per-channel metrics CSVs (typically <workspace>/{paths.TIMESERIES_DIRNAME}). "
+                f"Default PNG is written alongside AUC/fit outputs under <workspace>/{paths.RESULTS_DIRNAME}/."
+            ),
+        ),
+    ],
+    interval: Annotated[
+        float,
+        typer.Option(
+            "--interval",
+            min=0.0,
+            help="Minutes per frame index in metrics CSVs; x axis is t * interval (same as auc/fit).",
+        ),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help=(
+                f"Primary output PNG path. Default: <workspace>/{paths.RESULTS_DIRNAME}/traces.png "
+                "with a companion traces_shared_y.png for unified y limits."
+            ),
+        ),
+    ] = None,
+    columns: Annotated[
+        int,
+        typer.Option(
+            "--columns",
+            min=1,
+            help="Number of subplot columns in the output grid.",
+        ),
+    ] = 3,
 ) -> None:
     timeseries_csvs = paths.discover_timeseries_csvs(metrics_dir)
     results_dir = paths.workspace_results_dir(metrics_dir.parent)
@@ -260,4 +299,4 @@ def run_command(
         slide_channel_names=slide_channel_names,
     )
     for output_plot in written_plots:
-        print(format_written_timeseries_plot_message(output_plot))
+        typer.echo(format_written_timeseries_plot_message(output_plot))

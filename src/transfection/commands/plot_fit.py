@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import Annotated
 
 import matplotlib
+import typer
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -12,6 +14,7 @@ import pandas as pd
 
 from transfection import core as paths
 from transfection import core as plot_layout
+from transfection.app import app
 from transfection.commands import auc, plot_auc, plot_timeseries
 from transfection.core import (
     boxplot_tick_labels,
@@ -259,12 +262,46 @@ def format_written_fit_plot_messages(output_plots: list[Path]) -> list[str]:
     return [f"Wrote plot: {output_plot}" for output_plot in output_plots]
 
 
-def run_command(
-    fit_csv: Path,
-    *,
-    output: Path | None = None,
-    interval: float,
-    columns: int = 3,
+@app.command(NAME, help=HELP)
+def plot_fit(
+    fit_csv: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            dir_okay=False,
+            metavar="FIT_CSV",
+            help=(
+                f"Must be <workspace>/{paths.RESULTS_DIRNAME}/fit.csv; sibling "
+                f"{paths.TIMESERIES_DIRNAME}/ supplies raw traces for the fitted-trace grid."
+            ),
+        ),
+    ],
+    interval: Annotated[
+        float,
+        typer.Option(
+            "--interval",
+            min=0.0,
+            help="Frame interval in minutes used to reconstruct fitted traces against the sibling timeseries CSVs.",
+        ),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            file_okay=False,
+            dir_okay=True,
+            help="Directory for output PNGs. Default: same directory as the fit CSV.",
+        ),
+    ] = None,
+    columns: Annotated[
+        int,
+        typer.Option(
+            "--columns",
+            min=1,
+            help="Number of subplot columns in the fitted-trace grid.",
+        ),
+    ] = 3,
 ) -> None:
     output_plots = run_plot_fit(
         fit_csv,
@@ -273,4 +310,4 @@ def run_command(
         columns=columns,
     )
     for message in format_written_fit_plot_messages(output_plots):
-        print(message)
+        typer.echo(message)
