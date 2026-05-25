@@ -1,5 +1,3 @@
-"""Slide mapping command implementation."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,24 +6,10 @@ from typing import Annotated
 import typer
 
 from transfection.app import app
-from transfection.core import (
-    SlideMapping,
-    parse_slide_mapping_spec,
-    write_slide_mapping,
-)
+from transfection.services.slide import SlideOutputExistsError, format_mapping_lines, run_slide
 
 NAME = "slide"
 HELP = "Write slide.json from a compact slide mapping string."
-
-
-def _print_mapping(mapping: SlideMapping) -> None:
-    for slide_channel in sorted(mapping):
-        entry = mapping[slide_channel]
-        positions = ", ".join(str(pos) for pos in entry.positions)
-        typer.echo(
-            f"  slide_channel={slide_channel} sample_name={entry.sample_name!r} "
-            f"signal_channel={entry.signal_channel} mask_channel={entry.mask_channel} positions={positions}"
-        )
 
 
 @app.command(NAME, help=HELP)
@@ -62,18 +46,15 @@ def slide(
         ),
     ] = False,
 ) -> None:
-    output_path = output.expanduser().resolve()
-
     try:
-        mapping = parse_slide_mapping_spec(sample)
+        written_path, mapping = run_slide(sample=sample, output=output, force=force)
     except ValueError as error:
         typer.echo(f"Invalid --sample mapping: {error}", err=True)
         raise SystemExit(1) from None
+    except SlideOutputExistsError as error:
+        typer.echo(str(error), err=True)
+        raise SystemExit(1) from None
 
-    if output_path.exists() and not force:
-        typer.echo(f"{output_path} already exists. Pass --force to overwrite.", err=True)
-        raise SystemExit(1)
-
-    written_path = write_slide_mapping(mapping, output_path)
     typer.echo(f"Wrote slide mapping: {written_path}")
-    _print_mapping(mapping)
+    for line in format_mapping_lines(mapping):
+        typer.echo(line)

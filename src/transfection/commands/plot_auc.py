@@ -3,109 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-import matplotlib
 import typer
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-
-from transfection import core as plot_layout
 from transfection.app import app
-from transfection.core import (
-    boxplot_tick_labels,
-    boxplot_x_axis_label,
-    infer_workspace_for_plot_csv,
-    load_slide_channel_labels,
-)
+from transfection.services.plot_auc import format_written_auc_plot_message, run_plot_auc
 
 NAME = "plot-auc"
-HELP = (
-    "Plot AUC summaries as one box plot per slide channel."
-)
-
-
-def run_plot_auc(
-    auc_csv: Path,
-    *,
-    output: Path | None,
-    slide_channel_names: dict[int, str],
-) -> Path:
-    resolved_auc_csv = auc_csv.resolve()
-    df = load_auc_csv(resolved_auc_csv)
-    resolved_output_plot = default_output_plot_path(resolved_auc_csv, output)
-    write_auc_boxplot(
-        df,
-        resolved_output_plot,
-        slide_channel_names=slide_channel_names,
-    )
-    return resolved_output_plot
-
-
-def load_auc_csv(auc_csv: Path) -> pd.DataFrame:
-    df = pd.read_csv(auc_csv)
-    required = {"auc", "slide_channel"}
-    missing = required.difference(df.columns)
-    if missing:
-        raise ValueError(f"{auc_csv} is missing required columns for AUC plotting: {sorted(missing)}")
-    df = df.dropna(subset=["slide_channel", "auc"]).copy()
-    if df.empty:
-        raise ValueError(f"{auc_csv} has no AUC rows with slide_channel values")
-    df["slide_channel"] = df["slide_channel"].astype(int)
-    df["auc"] = df["auc"].astype(float)
-    return df.sort_values(["slide_channel"]).reset_index(drop=True)
-
-
-def default_output_plot_path(auc_csv: Path, output: Path | None) -> Path:
-    if output is not None:
-        return output.resolve()
-    return (auc_csv.parent / "auc.png").resolve()
-
-
-def write_auc_boxplot(
-    df: pd.DataFrame,
-    output_plot: Path,
-    *,
-    slide_channel_names: dict[int, str],
-) -> None:
-    positive_df = df.loc[df["auc"] > 0].copy()
-    if positive_df.empty:
-        raise ValueError("No positive AUC values available for log-scale plotting")
-
-    slide_channels = sorted(positive_df["slide_channel"].unique().tolist())
-    trace_counts = [
-        int(positive_df.loc[positive_df["slide_channel"] == slide_channel, "auc"].shape[0])
-        for slide_channel in slide_channels
-    ]
-    grouped_values = [
-        positive_df.loc[positive_df["slide_channel"] == slide_channel, "auc"].to_numpy(dtype=float)
-        for slide_channel in slide_channels
-    ]
-
-    fig, ax = plt.subplots(figsize=plot_layout.FIGURE_SIZE_IN)
-    ax.boxplot(
-        grouped_values,
-        tick_labels=boxplot_tick_labels(slide_channels, trace_counts, slide_channel_names),
-    )
-
-    ax.set_xlabel(boxplot_x_axis_label(slide_channel_names))
-    ax.set_ylabel("AUC")
-    ax.set_yscale("log")
-
-    output_plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_plot, dpi=plot_layout.FIGURE_DPI, bbox_inches="tight")
-    plt.close(fig)
-
-
-def quartile_axis_upper(grouped_values: list[np.ndarray]) -> float:
-    max_q3 = max(float(np.quantile(values, 0.75)) for values in grouped_values)
-    upper_limit = max_q3 * 1.25
-    return upper_limit if upper_limit > 0 else 1.0
-
-
-def format_written_auc_plot_message(output_plot: Path) -> str:
-    return f"Wrote plot: {output_plot}"
+HELP = "Plot AUC summaries as one box plot per slide channel."
 
 
 @app.command(NAME, help=HELP)
@@ -128,11 +32,5 @@ def plot_auc(
         ),
     ] = None,
 ) -> None:
-    workspace = infer_workspace_for_plot_csv(auc_csv)
-    slide_channel_names = load_slide_channel_labels(workspace)
-    resolved_output_plot = run_plot_auc(
-        auc_csv,
-        output=output,
-        slide_channel_names=slide_channel_names,
-    )
+    resolved_output_plot = run_plot_auc(auc_csv=auc_csv, output=output)
     typer.echo(format_written_auc_plot_message(resolved_output_plot))
