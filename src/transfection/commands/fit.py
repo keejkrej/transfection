@@ -15,7 +15,7 @@ HELP = (
     "expression_amplitude * (exp(-protein_decay_rate*t) - exp(-mrna_decay_rate*t)), "
     f"where t is minutes from t * --interval. translation_onset is fixed at 0 unless "
     f"--max-onset-minutes enables second-pass onset search. "
-    f"Writes <workspace>/{paths.RESULTS_DIRNAME}/fit.csv."
+    f"Writes <workspace>/{paths.RESULTS_DIRNAME}/fit.csv and fit.xlsx."
 )
 
 

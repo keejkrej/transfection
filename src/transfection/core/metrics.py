@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from transfection.core.export import write_csv_and_parallel_xlsx
 from transfection.core.mask import default_mask_path, read_mask_stack
 from transfection.core.roi import PositionIndex, read_roi_stack, roi_frame_2d
 
@@ -143,8 +144,7 @@ def compute_masked_roi_metrics(
 def write_metrics_csv(df: pd.DataFrame, output_csv: Path) -> None:
     if df.empty:
         raise ValueError("No rows to write")
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output_csv, index=False)
+    write_csv_and_parallel_xlsx(df, output_csv)
 
 
 def load_timeseries_csv(csv_path: Path) -> pd.DataFrame:

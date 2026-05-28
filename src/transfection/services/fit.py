@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 
 from transfection import core as paths
-from transfection.services import auc
 from transfection.core import load_timeseries_csv
+from transfection.core.export import parallel_xlsx_path, write_csv_and_parallel_xlsx
+from transfection.services import auc
 
 
 OUTPUT_COLUMNS = (
@@ -458,14 +459,13 @@ def _fit_trace_task(
 
 
 def write_fit_csv(df: pd.DataFrame, output_csv: Path) -> None:
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
     output_df = df.copy()
     output_df["success"] = output_df["success"].map(lambda value: "true" if bool(value) else "false")
-    output_df.to_csv(output_csv, index=False)
+    write_csv_and_parallel_xlsx(output_df, output_csv)
 
 
 def format_written_fit_csv_message(output_csv: Path) -> str:
-    return f"Wrote fit CSV: {output_csv}"
+    return f"Wrote fit CSV: {output_csv}\nWrote fit XLSX: {parallel_xlsx_path(output_csv)}"
 
 
 def run_fit(

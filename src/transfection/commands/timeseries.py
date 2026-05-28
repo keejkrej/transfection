@@ -17,7 +17,8 @@ NAME = "timeseries"
 HELP = (
     "Read cropped ROI TIFF timelapses from roi/PosN, compute per-ROI intensity "
     "metrics using segment masks for each slide channel's mapped signal channel, and write "
-    "one long-form CSV per slide channel as scS_chC.csv under <workspace>/timeseries/."
+    "one long-form CSV and parallel XLSX per slide channel as scS_chC.csv and scS_chC.xlsx "
+    "under <workspace>/timeseries/."
 )
 
 

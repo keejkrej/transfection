@@ -7,6 +7,7 @@ import pandas as pd
 
 from transfection import core as paths
 from transfection.core import load_timeseries_csv
+from transfection.core.export import parallel_xlsx_path, write_csv_and_parallel_xlsx
 
 
 GROUP_COLUMNS = ("pos", "roi")
@@ -94,12 +95,11 @@ def compute_auc_table(timeseries_csvs: list[Path], *, interval: float) -> pd.Dat
 
 
 def write_auc_csv(df: pd.DataFrame, output_csv: Path) -> None:
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output_csv, index=False)
+    write_csv_and_parallel_xlsx(df, output_csv)
 
 
 def format_written_auc_csv_message(output_csv: Path) -> str:
-    return f"Wrote AUC CSV: {output_csv}"
+    return f"Wrote AUC CSV: {output_csv}\nWrote AUC XLSX: {parallel_xlsx_path(output_csv)}"
 
 
 def run_auc(*, workspace: Path, interval: float) -> Path:

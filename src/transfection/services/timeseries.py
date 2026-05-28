@@ -18,6 +18,7 @@ from transfection.core import (
     validate_channel_index,
     write_metrics_csv,
 )
+from transfection.core.export import parallel_xlsx_path
 
 
 
@@ -286,9 +287,12 @@ def run_slide_timeseries(
 
 
 def format_written_timeseries_csv_message(slide_channel: int, output_csv: Path, position_count: int) -> str:
+    output_xlsx = parallel_xlsx_path(output_csv)
     return (
         f"Wrote metrics CSV for slide channel {slide_channel} with {position_count} positions: "
-        f"{output_csv}"
+        f"{output_csv}\n"
+        f"Wrote metrics XLSX for slide channel {slide_channel} with {position_count} positions: "
+        f"{output_xlsx}"
     )
 
 

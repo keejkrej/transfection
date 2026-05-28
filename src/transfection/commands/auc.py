@@ -12,7 +12,7 @@ from transfection.services.auc import format_written_auc_csv_message, run_auc
 NAME = "auc"
 HELP = (
     "Integrate every metrics CSV in <workspace>/timeseries/ and write "
-    f"<workspace>/{paths.RESULTS_DIRNAME}/auc.csv."
+    f"<workspace>/{paths.RESULTS_DIRNAME}/auc.csv and auc.xlsx."
 )
 
 
