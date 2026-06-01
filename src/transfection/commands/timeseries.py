@@ -79,7 +79,7 @@ def timeseries(
     ] = 1,
 ) -> None:
     result = run_timeseries(
-        workspace,
+        workspace=workspace,
         sample=sample,
         mask_channel=mask_channel,
         correction_quartile=correction_quartile,

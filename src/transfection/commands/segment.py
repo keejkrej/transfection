@@ -79,7 +79,7 @@ def segment(
     ] = 1,
 ) -> None:
     result = run_segment(
-        workspace,
+        workspace=workspace,
         sample=sample,
         variation_radius=variation_radius,
         gaussian_sigma=gaussian_sigma,
