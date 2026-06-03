@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import os
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import imageio.v2 as imageio
 import numpy as np
 
 from transfection.core import (
     RoiCrop,
-    SlideChannelMapping,
     default_mask_path,
     load_slide_mapping,
     position_dir,
@@ -18,15 +21,24 @@ from transfection.core import (
     roi_frame_2d,
     validate_channel_index,
 )
+from transfection.services.segment import format_skipped_positions_message
 
 
 REVIEW_FRAME_SIZE = 512
+
+VideoWrittenCallback = Callable[["CheckSegmentVideo"], None]
 
 
 @dataclass(frozen=True)
 class CheckSegmentVideo:
     output_path: Path
     frame_count: int
+
+
+@dataclass(frozen=True)
+class CheckSegmentRunResult:
+    videos: list[CheckSegmentVideo]
+    skipped_positions: dict[int, list[int]]
 
 
 def default_output_dir(workspace: Path) -> Path:
@@ -141,6 +153,10 @@ def roi_channel_frames(pos_dir: Path, index, roi: RoiCrop, *, channel: int) -> n
     return np.stack(frames, axis=0)
 
 
+def _review_channels(*, mask_channel: int, signal_channel: int) -> list[int]:
+    return sorted({mask_channel, signal_channel})
+
+
 def write_check_segment_video(
     *,
     output_dir: Path,
@@ -154,12 +170,11 @@ def write_check_segment_video(
     force: bool,
 ) -> CheckSegmentVideo:
     validate_channel_index(index, source_channel)
-    frames = roi_channel_frames(pos_dir, index, roi, channel=source_channel)
-
     output_path = default_video_path(output_dir, position=position, roi=roi, channel=source_channel)
     if output_path.exists() and not force:
         return CheckSegmentVideo(output_path=output_path, frame_count=index.time_count)
 
+    frames = roi_channel_frames(pos_dir, index, roi, channel=source_channel)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     low, high = _normalization_bounds(frames)
     with imageio.get_writer(output_path, fps=fps, codec="libx264", macro_block_size=1) as writer:
@@ -170,59 +185,182 @@ def write_check_segment_video(
     return CheckSegmentVideo(output_path=output_path, frame_count=index.time_count)
 
 
-def _review_channels(mapping: SlideChannelMapping) -> list[int]:
-    return sorted({mapping.mask_channel, mapping.signal_channel})
+def _run_position_check_segment(
+    workspace: Path,
+    *,
+    slide_channel: int,
+    mask_channel: int,
+    signal_channel: int,
+    resolved_pos: int,
+    output_dir: Path,
+    fps: float,
+    force: bool,
+) -> tuple[int, int, list[CheckSegmentVideo] | None]:
+    try:
+        pos_dir = position_dir(workspace, resolved_pos)
+    except ValueError:
+        return (slide_channel, resolved_pos, None)
+
+    index = read_position_index(pos_dir)
+    validate_channel_index(index, mask_channel)
+    review_channels = _review_channels(mask_channel=mask_channel, signal_channel=signal_channel)
+    videos: list[CheckSegmentVideo] = []
+    for roi in index.rois:
+        mask_reference_frames = roi_channel_frames(pos_dir, index, roi, channel=mask_channel)
+        mask_path = default_mask_path(
+            workspace,
+            position=index.position,
+            slide_channel=slide_channel,
+            mask_channel=mask_channel,
+            roi_file_name=roi.file_name,
+        )
+        mask_stack = read_mask_stack(
+            mask_path,
+            time_count=index.time_count,
+            frame_shape=tuple(int(value) for value in mask_reference_frames[0].shape),
+        )
+        for channel in review_channels:
+            videos.append(
+                write_check_segment_video(
+                    output_dir=output_dir,
+                    position=position,
+                    pos_dir=pos_dir,
+                    index=index,
+                    roi=roi,
+                    source_channel=channel,
+                    mask_stack=mask_stack,
+                    fps=fps,
+                    force=force,
+                )
+            )
+    return (slide_channel, resolved_pos, videos)
+
+
+def _position_check_segment_task(
+    payload: tuple[str, int, int, int, int, str, float, bool],
+) -> tuple[int, int, list[CheckSegmentVideo] | None]:
+    (
+        workspace_str,
+        slide_channel,
+        mask_channel,
+        signal_channel,
+        resolved_pos,
+        output_dir_str,
+        fps,
+        force,
+    ) = payload
+    return _run_position_check_segment(
+        Path(workspace_str),
+        slide_channel=slide_channel,
+        mask_channel=mask_channel,
+        signal_channel=signal_channel,
+        resolved_pos=resolved_pos,
+        output_dir=Path(output_dir_str),
+        fps=fps,
+        force=force,
+    )
+
+
+def _position_tasks(
+    workspace: Path,
+    slide_positions,
+    *,
+    output_dir: Path,
+    fps: float,
+    force: bool,
+) -> list[tuple[str, int, int, int, int, str, float, bool]]:
+    return [
+        (
+            str(workspace),
+            slide_channel,
+            entry.mask_channel,
+            entry.signal_channel,
+            resolved_pos,
+            str(output_dir),
+            fps,
+            force,
+        )
+        for slide_channel, entry in slide_positions.items()
+        for resolved_pos in entry.positions
+    ]
+
+
+def format_written_check_segment_video_message(video: CheckSegmentVideo) -> str:
+    return f"Wrote check video ({video.frame_count} frames): {video.output_path}"
 
 
 def run_check_segment(
-    workspace: Path,
     *,
+    workspace: Path,
     sample: Path,
     output: Path | None = None,
     fps: float = 6.0,
     force: bool = False,
-) -> list[CheckSegmentVideo]:
+    on_video_written: VideoWrittenCallback | None = None,
+    jobs: int = 1,
+) -> CheckSegmentRunResult:
+    if jobs < 1:
+        raise ValueError(f"--jobs must be >= 1, got {jobs}")
     if fps <= 0:
         raise ValueError(f"--fps must be > 0, got {fps}")
 
     workspace = workspace.resolve()
     output_dir = default_output_dir(workspace) if output is None else output.resolve()
-    slide_mapping = load_slide_mapping(sample.resolve())
+    slide_path = sample.resolve()
+    slide_positions = load_slide_mapping(slide_path)
+    tasks = _position_tasks(
+        workspace,
+        slide_positions,
+        output_dir=output_dir,
+        fps=fps,
+        force=force,
+    )
+    if not tasks:
+        raise ValueError(f"{slide_path} defines no valid positions")
+
+    skipped_positions: dict[int, list[int]] = defaultdict(list)
     videos: list[CheckSegmentVideo] = []
-    for slide_channel, mapping in slide_mapping.items():
-        for position in mapping.positions:
-            pos_dir = position_dir(workspace, position)
-            index = read_position_index(pos_dir)
-            validate_channel_index(index, mapping.mask_channel)
-            review_channels = _review_channels(mapping)
-            for roi in index.rois:
-                mask_reference_frames = roi_channel_frames(pos_dir, index, roi, channel=mapping.mask_channel)
-                mask_path = default_mask_path(
-                    workspace,
-                    position=index.position,
-                    slide_channel=slide_channel,
-                    mask_channel=mapping.mask_channel,
-                    roi_file_name=roi.file_name,
-                )
-                mask_stack = read_mask_stack(
-                    mask_path,
-                    time_count=index.time_count,
-                    frame_shape=tuple(int(value) for value in mask_reference_frames[0].shape),
-                )
-                for channel in review_channels:
-                    videos.append(
-                        write_check_segment_video(
-                            output_dir=output_dir,
-                            position=position,
-                            pos_dir=pos_dir,
-                            index=index,
-                            roi=roi,
-                            source_channel=channel,
-                            mask_stack=mask_stack,
-                            fps=fps,
-                            force=force,
-                        )
-                    )
+
+    def consume(row: tuple[int, int, list[CheckSegmentVideo] | None]) -> None:
+        slide_channel, resolved_pos, position_videos = row
+        if position_videos is None:
+            skipped_positions.setdefault(slide_channel, []).append(resolved_pos)
+            return
+        videos.extend(position_videos)
+        if on_video_written is not None:
+            for video in position_videos:
+                on_video_written(video)
+
+    if jobs == 1 or len(tasks) <= 1:
+        for task in tasks:
+            consume(_position_check_segment_task(task))
+    else:
+        max_workers = min(jobs, len(tasks), os.cpu_count() or jobs)
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_position_check_segment_task, task) for task in tasks]
+            for future in as_completed(futures):
+                consume(future.result())
+
     if not videos:
+        if skipped_positions:
+            skipped_summary = "; ".join(
+                f"slide channel {slide_channel} -> {', '.join(str(pos) for pos in positions)}"
+                for slide_channel, positions in sorted(skipped_positions.items())
+            )
+            raise ValueError(
+                f"No check-segment videos produced for positions in {slide_path}. "
+                f"Skipped positions: {skipped_summary}"
+            )
         raise ValueError("No check-segment videos produced")
-    return videos
+
+    return CheckSegmentRunResult(videos=videos, skipped_positions=skipped_positions)
+
+
+__all__ = [
+    "CheckSegmentRunResult",
+    "CheckSegmentVideo",
+    "default_output_dir",
+    "format_skipped_positions_message",
+    "format_written_check_segment_video_message",
+    "run_check_segment",
+]
