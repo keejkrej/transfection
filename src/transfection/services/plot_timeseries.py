@@ -134,7 +134,7 @@ def panel_values(df: pd.DataFrame, column: str) -> np.ndarray:
     return df[column].astype(float).to_numpy(dtype=float)
 
 
-def percentile_ylim(values: np.ndarray, *, percentile: float = 0) -> tuple[float, float]:
+def percentile_ylim(values: np.ndarray, *, percentile: float = 5) -> tuple[float, float]:
     arr = np.asarray(values, dtype=float)
     arr = arr[np.isfinite(arr)]
     if arr.size == 0:
