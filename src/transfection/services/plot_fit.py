@@ -51,14 +51,38 @@ def run_plot_fit(
     slide_channel_names = load_slide_channel_labels(infer_workspace_for_plot_csv(fit_csv))
     written_paths: list[Path] = []
     for parameter, label in PLOTTED_PARAMETERS:
+        output_plot = output_paths[parameter]
+        if parameter == "transfection_efficiency":
+            write_fit_boxplot(
+                df,
+                parameter=parameter,
+                ylabel=label,
+                output_plot=output_plot,
+                slide_channel_names=slide_channel_names,
+                log_scale=False,
+            )
+            written_paths.append(output_plot)
+            log_output_plot = plot_auc.log_output_plot_path(output_plot)
+            write_fit_boxplot(
+                df,
+                parameter=parameter,
+                ylabel=label,
+                output_plot=log_output_plot,
+                slide_channel_names=slide_channel_names,
+                log_scale=True,
+            )
+            written_paths.append(log_output_plot)
+            continue
+
         write_fit_boxplot(
             df,
             parameter=parameter,
             ylabel=label,
-            output_plot=output_paths[parameter],
+            output_plot=output_plot,
             slide_channel_names=slide_channel_names,
+            log_scale=False,
         )
-        written_paths.append(output_paths[parameter])
+        written_paths.append(output_plot)
     resolved_timeseries_csvs = infer_timeseries_csvs(resolved_fit_csv)
     fit_trace_plot = default_trace_plot_path(resolved_fit_csv, output)
     write_fitted_trace_grid(
@@ -131,10 +155,10 @@ def write_fit_boxplot(
     ylabel: str,
     output_plot: Path,
     slide_channel_names: dict[int, str],
+    log_scale: bool,
 ) -> None:
     parameter_df = df.dropna(subset=[parameter]).copy()
-    use_log_scale = parameter == "transfection_efficiency"
-    if use_log_scale:
+    if log_scale:
         parameter_df = parameter_df.loc[parameter_df[parameter] > 0].copy()
     if parameter_df.empty:
         raise ValueError(f"No finite rows available to plot parameter {parameter!r}")
@@ -148,8 +172,6 @@ def write_fit_boxplot(
         parameter_df.loc[parameter_df["slide_channel"] == slide_channel, parameter].to_numpy(dtype=float)
         for slide_channel in slide_channels
     ]
-    if not use_log_scale:
-        upper_limit = plot_auc.quartile_axis_upper(grouped_values)
 
     fig, ax = plt.subplots(figsize=plot_layout.FIGURE_SIZE_IN)
     ax.boxplot(
@@ -159,10 +181,14 @@ def write_fit_boxplot(
 
     ax.set_xlabel(boxplot_x_axis_label(slide_channel_names))
     ax.set_ylabel(ylabel)
-    if use_log_scale:
+    if log_scale:
         ax.set_yscale("log")
     else:
-        ax.set_ylim(0.0, upper_limit)
+        arrays = [values for values in grouped_values if values.size]
+        y_low, y_high = plot_timeseries.percentile_ylim(
+            np.concatenate(arrays) if arrays else np.array([])
+        )
+        ax.set_ylim(y_low, y_high)
 
     output_plot.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_plot, dpi=plot_layout.FIGURE_DPI, bbox_inches="tight")

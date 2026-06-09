@@ -16,6 +16,7 @@ from transfection.core import (
     infer_workspace_for_plot_csv,
     load_slide_channel_labels,
 )
+from transfection.services.plot_timeseries import percentile_ylim
 
 
 
@@ -24,16 +25,24 @@ def render_plot_auc(
     *,
     output: Path | None,
     slide_channel_names: dict[int, str],
-) -> Path:
+) -> tuple[Path, Path]:
     resolved_auc_csv = auc_csv.resolve()
     df = load_auc_csv(resolved_auc_csv)
     resolved_output_plot = default_output_plot_path(resolved_auc_csv, output)
+    log_output_plot = log_output_plot_path(resolved_output_plot)
     write_auc_boxplot(
         df,
         resolved_output_plot,
         slide_channel_names=slide_channel_names,
+        log_scale=False,
     )
-    return resolved_output_plot
+    write_auc_boxplot(
+        df,
+        log_output_plot,
+        slide_channel_names=slide_channel_names,
+        log_scale=True,
+    )
+    return resolved_output_plot, log_output_plot
 
 
 def load_auc_csv(auc_csv: Path) -> pd.DataFrame:
@@ -56,15 +65,20 @@ def default_output_plot_path(auc_csv: Path, output: Path | None) -> Path:
     return (auc_csv.parent / "auc.png").resolve()
 
 
+def log_output_plot_path(output_plot: Path) -> Path:
+    return output_plot.with_name(f"{output_plot.stem}_log{output_plot.suffix}")
+
+
 def write_auc_boxplot(
     df: pd.DataFrame,
     output_plot: Path,
     *,
     slide_channel_names: dict[int, str],
+    log_scale: bool,
 ) -> None:
     positive_df = df.loc[df["auc"] > 0].copy()
     if positive_df.empty:
-        raise ValueError("No positive AUC values available for log-scale plotting")
+        raise ValueError("No positive AUC values available for plotting")
 
     slide_channels = sorted(positive_df["slide_channel"].unique().tolist())
     trace_counts = [
@@ -84,24 +98,27 @@ def write_auc_boxplot(
 
     ax.set_xlabel(boxplot_x_axis_label(slide_channel_names))
     ax.set_ylabel("AUC")
-    ax.set_yscale("log")
+    if log_scale:
+        ax.set_yscale("log")
+    else:
+        arrays = [values for values in grouped_values if values.size]
+        y_low, y_high = percentile_ylim(np.concatenate(arrays) if arrays else np.array([]))
+        ax.set_ylim(y_low, y_high)
 
     output_plot.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_plot, dpi=plot_layout.FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
-def quartile_axis_upper(grouped_values: list[np.ndarray]) -> float:
-    max_q3 = max(float(np.quantile(values, 0.75)) for values in grouped_values)
-    upper_limit = max_q3 * 1.25
-    return upper_limit if upper_limit > 0 else 1.0
+def format_written_auc_plot_messages(output_plots: list[Path]) -> list[str]:
+    return [f"Wrote plot: {output_plot}" for output_plot in output_plots]
 
 
 def format_written_auc_plot_message(output_plot: Path) -> str:
-    return f"Wrote plot: {output_plot}"
+    return format_written_auc_plot_messages([output_plot])[0]
 
 
-def run_plot_auc(*, auc_csv: Path, output: Path | None = None) -> Path:
+def run_plot_auc(*, auc_csv: Path, output: Path | None = None) -> tuple[Path, Path]:
     workspace = infer_workspace_for_plot_csv(auc_csv)
     slide_channel_names = load_slide_channel_labels(workspace)
     return render_plot_auc(

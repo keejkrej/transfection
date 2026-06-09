@@ -6,7 +6,10 @@ from typing import Annotated
 import typer
 
 from transfection.app import app
-from transfection.services.plot_auc import format_written_auc_plot_message, run_plot_auc
+from transfection.services.plot_auc import (
+    format_written_auc_plot_messages,
+    run_plot_auc,
+)
 
 NAME = "plot-auc"
 HELP = "Plot AUC summaries as one box plot per slide channel."
@@ -28,9 +31,13 @@ def plot_auc(
         typer.Option(
             "--output",
             "-o",
-            help="Output PNG path. Default: auc.png in the same directory as the AUC CSV.",
+            help=(
+                "Output PNG path for the linear-scale plot. Default: auc.png in the same "
+                "directory as the AUC CSV. Also writes a log-scale auc_log.png."
+            ),
         ),
     ] = None,
 ) -> None:
-    resolved_output_plot = run_plot_auc(auc_csv=auc_csv, output=output)
-    typer.echo(format_written_auc_plot_message(resolved_output_plot))
+    output_plots = run_plot_auc(auc_csv=auc_csv, output=output)
+    for message in format_written_auc_plot_messages(output_plots):
+        typer.echo(message)

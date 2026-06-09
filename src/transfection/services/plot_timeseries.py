@@ -134,13 +134,16 @@ def panel_values(df: pd.DataFrame, column: str) -> np.ndarray:
     return df[column].astype(float).to_numpy(dtype=float)
 
 
-def percentile_ylim(values: np.ndarray) -> tuple[float, float]:
+def percentile_ylim(values: np.ndarray, *, percentile: float = 0) -> tuple[float, float]:
     arr = np.asarray(values, dtype=float)
     arr = arr[np.isfinite(arr)]
     if arr.size == 0:
         return (0.0, 1.0)
-    low, high = np.percentile(arr, [1.0, 99.0])
-    low_f, high_f = float(low), float(high)
+    if percentile == 0:
+        low_f, high_f = float(arr.min()), float(arr.max())
+    else:
+        low, high = np.percentile(arr, [percentile, 100.0 - percentile])
+        low_f, high_f = float(low), float(high)
     return expand_degenerate_ylim(low_f, high_f)
 
 
