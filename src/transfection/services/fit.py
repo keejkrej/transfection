@@ -26,7 +26,7 @@ OUTPUT_COLUMNS = (
     "mrna_lifetime",
     "translation_onset",
     "expression_amplitude",
-    "transfection_efficiency",
+    "expression_rate",
     "success",
 )
 
@@ -322,7 +322,7 @@ def _candidate_onset_indices(times: np.ndarray, *, max_onset_minutes: float | No
 
 
 def derive_parameters(result: FitResult) -> dict[str, float]:
-    transfection_efficiency = result.expression_amplitude * (result.mrna_decay_rate - result.protein_decay_rate)
+    expression_rate = result.expression_amplitude * (result.mrna_decay_rate - result.protein_decay_rate)
     return {
         "intensity_offset": result.intensity_offset,
         "protein_decay_rate": result.protein_decay_rate,
@@ -331,7 +331,7 @@ def derive_parameters(result: FitResult) -> dict[str, float]:
         "mrna_lifetime": 1.0 / result.mrna_decay_rate,
         "translation_onset": result.translation_onset,
         "expression_amplitude": result.expression_amplitude,
-        "transfection_efficiency": transfection_efficiency,
+        "expression_rate": expression_rate,
     }
 
 
@@ -424,7 +424,7 @@ def _failed_fit_row(slide_channel: int | None, group_values: dict[str, int]) -> 
         "mrna_lifetime": None,
         "translation_onset": None,
         "expression_amplitude": None,
-        "transfection_efficiency": None,
+        "expression_rate": None,
         "success": False,
     }
 

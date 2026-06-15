@@ -381,9 +381,9 @@ def _(auc_df, fit_df, mo, sc0, sc1, sc2, sc3, sc4, sc5):
         tick_labels=["0", "1", "2", "3", "4", "5"],
     )
     ax.set_xlabel("slide channel")
-    ax.set_ylabel("transfection efficiency")
+    ax.set_ylabel("expression rate")
     fig.tight_layout()
-    efficiency_linear_fig = fig
+    expression_rate_linear_fig = fig
 
     fig, ax = plt.subplots(figsize=(12.0, 8.0))
     ax.boxplot(
@@ -506,10 +506,10 @@ def _(auc_df, fit_df, mo, sc0, sc1, sc2, sc3, sc4, sc5):
         tick_labels=["0", "1", "2", "3", "4", "5"],
     )
     ax.set_xlabel("slide channel")
-    ax.set_ylabel("transfection efficiency")
+    ax.set_ylabel("expression rate")
     ax.set_yscale("log")
     fig.tight_layout()
-    efficiency_log_fig = fig
+    expression_rate_log_fig = fig
 
     fig, axes = plt.subplots(2, 3, figsize=(12.0, 8.0), squeeze=False)
 
@@ -696,8 +696,8 @@ def _(auc_df, fit_df, mo, sc0, sc1, sc2, sc3, sc4, sc5):
             auc_linear_fig,
             auc_log_fig,
             protein_lifetime_fig,
-            efficiency_linear_fig,
-            efficiency_log_fig,
+            expression_rate_linear_fig,
+            expression_rate_log_fig,
             fit_traces_fig,
         ]
     )

@@ -27,7 +27,7 @@ PLOTTED_PARAMETERS = (
     ("protein_lifetime", "protein lifetime"),
     ("mrna_lifetime", "mRNA lifetime"),
     ("translation_onset", "translation onset"),
-    ("transfection_efficiency", "transfection efficiency"),
+    ("expression_rate", "expression rate"),
 )
 FIT_TRACE_PARAMETERS = (
     "intensity_offset",
@@ -52,7 +52,7 @@ def run_plot_fit(
     written_paths: list[Path] = []
     for parameter, label in PLOTTED_PARAMETERS:
         output_plot = output_paths[parameter]
-        if parameter == "transfection_efficiency":
+        if parameter == "expression_rate":
             write_fit_boxplot(
                 df,
                 parameter=parameter,
@@ -120,8 +120,11 @@ def load_fit_csv(fit_csv: Path) -> pd.DataFrame:
         df["protein_lifetime"] = 1.0 / df["protein_decay_rate"]
     if "mrna_lifetime" not in df.columns:
         df["mrna_lifetime"] = 1.0 / df["mrna_decay_rate"]
-    if "transfection_efficiency" not in df.columns:
-        df["transfection_efficiency"] = df["expression_amplitude"] * (df["mrna_decay_rate"] - df["protein_decay_rate"])
+    if "expression_rate" not in df.columns:
+        if "transfection_efficiency" in df.columns:
+            df["expression_rate"] = df["transfection_efficiency"]
+        else:
+            df["expression_rate"] = df["expression_amplitude"] * (df["mrna_decay_rate"] - df["protein_decay_rate"])
     return df.sort_values(["slide_channel", "pos", "roi"]).reset_index(drop=True)
 
 
