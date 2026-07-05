@@ -26,7 +26,7 @@ Thumbs.db
 
 # Marimo
 __marimo__/
-examples/layouts/
+scripts/layouts/
 
 # Environment
 .env
