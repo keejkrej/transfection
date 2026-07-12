@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 import tifffile
 from matplotlib.patches import Rectangle
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 SIGNAL_CHANNEL = 1
 INTERVAL_MINUTES = 10.0
@@ -35,14 +36,84 @@ AXIS_LABEL_FONT = 16
 TICK_LABEL_FONT = 14
 PANEL_LABEL_FONT = 20
 LEGEND_FONT = 12
+BACKGROUND_TRACE_COUNT = 10
+BACKGROUND_TRACE_ALPHA = 0.55
+BACKGROUND_TRACE_COLOR = "#808080"
+MARGINAL_HIST_FRAC = 0.22
+MARGINAL_HIST_PAD = 0.08
+MARGINAL_HIST_BINS = 18
 DEFAULT_POSITION = 3
 DEFAULT_GRID_INDEX = 0
+# Shifts the grid-index crop's x-origin right by this fraction of the crop
+# width. The unshifted upper-left third (grid_index=0) leaves a wide blank
+# strip on the left (only a frame-edge-clipped cell) while its rightmost
+# column of cells gets cut off by the crop boundary. Shifting right by ~19%
+# drops that clipped edge cell and brings the next full column fully into
+# view instead, with no boxes clipped by the crop.
+DEFAULT_X_SHIFT_FRAC = 0.19
 DISPLAY_FRAME = 100
 AVAILABLE_POSITIONS = (1, 2, 3, 4, 5)
 
 
 def style_plot_axes(ax: plt.Axes) -> None:
     ax.tick_params(axis="both", labelsize=TICK_LABEL_FONT)
+    show_all_spines(ax)
+
+
+def show_all_spines(ax: plt.Axes, *, color: str = "black", linewidth: float = 0.8) -> None:
+    """Matplotlib axis borders are the four spines (top/right/bottom/left)."""
+    for side in ("top", "right", "bottom", "left"):
+        ax.spines[side].set_visible(True)
+        ax.spines[side].set_color(color)
+        ax.spines[side].set_linewidth(linewidth)
+
+
+def add_panel_border(ax: plt.Axes, *, color: str = "black", linewidth: float = 0.8) -> None:
+    """Frame image panels that use axis('off') with a four-sided border."""
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    xmin, xmax = min(x0, x1), max(x0, x1)
+    ymin, ymax = min(y0, y1), max(y0, y1)
+    ax.add_patch(
+        Rectangle(
+            (xmin, ymin),
+            xmax - xmin,
+            ymax - ymin,
+            fill=False,
+            edgecolor=color,
+            linewidth=linewidth,
+            clip_on=True,
+            zorder=10,
+        )
+    )
+
+
+def log_percentile_limits(values: np.ndarray, lo: float = 1.0, hi: float = 99.0) -> tuple[float, float]:
+    finite = values[np.isfinite(values) & (values > 0)]
+    if finite.size == 0:
+        return 1.0, 10.0
+    low, high = np.percentile(finite, [lo, hi])
+    if low <= 0 or high <= low:
+        low = float(np.min(finite))
+        high = float(np.max(finite))
+    if high <= low:
+        high = low * 1.05
+    return float(low), float(high)
+
+
+def select_background_traces(timeseries_df: pd.DataFrame, count: int = BACKGROUND_TRACE_COUNT) -> list[pd.DataFrame]:
+    """Pick `count` traces spread across peak fluorescence for representative gray context."""
+    ranked: list[tuple[float, pd.DataFrame]] = []
+    for _, trace in timeseries_df.groupby(["pos", "roi"], sort=True):
+        values = trace["corrected"].astype(float).to_numpy(dtype=float)
+        finite = values[np.isfinite(values)]
+        peak = float(np.max(finite)) if finite.size else 0.0
+        ranked.append((peak, trace))
+    ranked.sort(key=lambda item: item[0])
+    if len(ranked) <= count:
+        return [trace for _, trace in ranked]
+    pick = np.linspace(0, len(ranked) - 1, count, dtype=int)
+    return [ranked[index][1] for index in pick]
 
 
 def position_image_path(workspace: Path, pos: int, timepoint: int) -> Path:
@@ -73,12 +144,16 @@ def bbox_count_in_crop(
     return int(inside.sum())
 
 
-def third_crop_grid_index(width: int, height: int, grid_index: int) -> tuple[int, int]:
+def third_crop_grid_index(
+    width: int, height: int, grid_index: int, *, x_shift_frac: float = 0.0
+) -> tuple[int, int]:
     crop_w = width // 3
     crop_h = height // 3
     col = grid_index % 3
     row = grid_index // 3
-    return col * crop_w, row * crop_h
+    x0 = col * crop_w + int(round(x_shift_frac * crop_w))
+    x0 = min(max(x0, 0), width - crop_w)
+    return x0, row * crop_h
 
 
 def shuffle_panel_a(workspace: Path) -> tuple[int, int]:
@@ -117,12 +192,15 @@ def third_crop(
     *,
     crop_rank: int = 0,
     grid_index: int | None = None,
+    x_shift_frac: float = 0.0,
 ) -> tuple[np.ndarray, int, int]:
     height, width = frame.shape
     crop_w = width // 3
     crop_h = height // 3
     if grid_index is not None:
-        x0, y0 = third_crop_grid_index(width, height, grid_index)
+        x0, y0 = third_crop_grid_index(
+            width, height, grid_index, x_shift_frac=x_shift_frac
+        )
     else:
         x0, y0 = third_crop_origin(width, height, bbox_df, crop_rank=crop_rank)
     return frame[y0 : y0 + crop_h, x0 : x0 + crop_w], x0, y0
@@ -170,12 +248,17 @@ def plot_position_tile(
     *,
     crop_rank: int = 0,
     grid_index: int | None = None,
+    x_shift_frac: float = 0.0,
 ) -> None:
     image_path = position_image_path(workspace, pos, DISPLAY_FRAME)
     frame = np.asarray(tifffile.imread(image_path), dtype=np.float32)
     bbox_table = load_bbox_table(workspace, pos)
     crop, x0, y0 = third_crop(
-        frame, bbox_table, crop_rank=crop_rank, grid_index=grid_index
+        frame,
+        bbox_table,
+        crop_rank=crop_rank,
+        grid_index=grid_index,
+        x_shift_frac=x_shift_frac,
     )
     rgb = frame_to_gfp_rgb(crop)
     bbox_df = bboxes_in_crop(bbox_table, x0, y0, crop.shape[1], crop.shape[0])
@@ -186,6 +269,7 @@ def plot_position_tile(
     ax.set_ylim(crop.shape[0] - 0.5, -0.5)
     ax.set_aspect("equal")
     ax.axis("off")
+    add_panel_border(ax)
 
     for _, bbox in bbox_df.iterrows():
         ax.add_patch(
@@ -203,11 +287,18 @@ def plot_position_tile(
 def plot_timeseries_panel(ax, timeseries_df: pd.DataFrame) -> None:
     all_values: list[np.ndarray] = []
 
-    for _, trace in timeseries_df.groupby(["pos", "roi"], sort=True):
+    for trace in select_background_traces(timeseries_df):
         values = trace["corrected"].astype(float).to_numpy(dtype=float)
         minutes = trace["t"].astype(float).to_numpy(dtype=float) * INTERVAL_MINUTES
         all_values.append(values)
-        ax.plot(minutes, values, color="#b0b0b0", linewidth=0.7, alpha=0.25, zorder=1)
+        ax.plot(
+            minutes,
+            values,
+            color=BACKGROUND_TRACE_COLOR,
+            linewidth=0.9,
+            alpha=BACKGROUND_TRACE_ALPHA,
+            zorder=1,
+        )
 
     median_trace = (
         timeseries_df.groupby("t", as_index=False)["corrected"]
@@ -238,9 +329,54 @@ def plot_timeseries_panel(ax, timeseries_df: pd.DataFrame) -> None:
     ax.set_xlim(0.0, float(timeseries_df["t"].max() * INTERVAL_MINUTES))
     ax.set_ylabel("eGFP fluorescence (a.u.)", fontsize=AXIS_LABEL_FONT)
     ax.set_xlabel("time (min)", fontsize=AXIS_LABEL_FONT)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
     style_plot_axes(ax)
+
+
+def plot_log_scatter_with_marginals(
+    ax: plt.Axes,
+    x_plot: np.ndarray,
+    y_plot: np.ndarray,
+    *,
+    color: str,
+    xlabel: str,
+    ylabel: str,
+) -> None:
+    x_lo, x_hi = log_percentile_limits(x_plot)
+    y_lo, y_hi = log_percentile_limits(y_plot)
+
+    divider = make_axes_locatable(ax)
+    ax_top = divider.append_axes("top", size=f"{MARGINAL_HIST_FRAC * 100:.0f}%", pad=MARGINAL_HIST_PAD, sharex=ax)
+    ax_right = divider.append_axes(
+        "right", size=f"{MARGINAL_HIST_FRAC * 100:.0f}%", pad=MARGINAL_HIST_PAD, sharey=ax
+    )
+
+    ax.scatter(x_plot, y_plot, s=18, alpha=0.55, color=color, zorder=3)
+    ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_FONT)
+    ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_FONT)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlim(x_lo, x_hi)
+    ax.set_ylim(y_lo, y_hi)
+    style_plot_axes(ax)
+
+    x_bins = np.logspace(np.log10(x_lo), np.log10(x_hi), MARGINAL_HIST_BINS)
+    y_bins = np.logspace(np.log10(y_lo), np.log10(y_hi), MARGINAL_HIST_BINS)
+    ax_top.hist(x_plot, bins=x_bins, color=color, alpha=0.75, edgecolor="white", linewidth=0.4)
+    ax_right.hist(
+        y_plot,
+        bins=y_bins,
+        orientation="horizontal",
+        color=color,
+        alpha=0.75,
+        edgecolor="white",
+        linewidth=0.4,
+    )
+
+    ax_top.tick_params(axis="x", labelbottom=False, bottom=False)
+    ax_right.tick_params(axis="y", labelleft=False, left=False)
+    for marginal_ax in (ax_top, ax_right):
+        marginal_ax.set_facecolor("white")
+        show_all_spines(marginal_ax)
 
 
 def compute_onset_minutes(timeseries_df: pd.DataFrame) -> pd.DataFrame:
@@ -280,17 +416,14 @@ def plot_onset_correlation_panel(
     y_rate = ok["expression_rate"].astype(float).to_numpy(dtype=float)
 
     mask = np.isfinite(x_hours) & np.isfinite(y_rate) & (x_hours > 0) & (y_rate > 0)
-    x_plot = x_hours[mask]
-    y_plot = y_rate[mask]
-
-    ax.scatter(x_plot, y_plot, s=18, alpha=0.55, color="#1f77b4")
-    ax.set_xlabel("translation onset (h)", fontsize=AXIS_LABEL_FONT)
-    ax.set_ylabel("eGFP expression rate", fontsize=AXIS_LABEL_FONT)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    style_plot_axes(ax)
+    plot_log_scatter_with_marginals(
+        ax,
+        x_hours[mask],
+        y_rate[mask],
+        color="#1f77b4",
+        xlabel="translation onset (h)",
+        ylabel="eGFP expression rate",
+    )
 
 
 def plot_lifetime_correlation_panel(ax, fit_df: pd.DataFrame) -> None:
@@ -299,17 +432,14 @@ def plot_lifetime_correlation_panel(ax, fit_df: pd.DataFrame) -> None:
     y_rate = ok["expression_rate"].astype(float).to_numpy(dtype=float)
 
     mask = np.isfinite(x_hours) & np.isfinite(y_rate) & (x_hours > 0) & (y_rate > 0)
-    x_plot = x_hours[mask]
-    y_plot = y_rate[mask]
-
-    ax.scatter(x_plot, y_plot, s=18, alpha=0.55, color="#d62728")
-    ax.set_xlabel("mRNA lifetime (h)", fontsize=AXIS_LABEL_FONT)
-    ax.set_ylabel("eGFP expression rate", fontsize=AXIS_LABEL_FONT)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    style_plot_axes(ax)
+    plot_log_scatter_with_marginals(
+        ax,
+        x_hours[mask],
+        y_rate[mask],
+        color="#d62728",
+        xlabel="mRNA lifetime (h)",
+        ylabel="eGFP expression rate",
+    )
 
 
 def add_panel_labels(fig: plt.Figure, axes: list[plt.Axes]) -> None:
@@ -335,6 +465,7 @@ def render_figure(
     position: int = DEFAULT_POSITION,
     crop_rank: int = 0,
     grid_index: int | None = DEFAULT_GRID_INDEX,
+    x_shift_frac: float = DEFAULT_X_SHIFT_FRAC,
     fit_csv: Path | None = None,
     timeseries_csv: Path | None = None,
 ) -> tuple[Path, Path]:
@@ -346,9 +477,9 @@ def render_figure(
 
     onset_df = compute_onset_minutes(timeseries_df)
 
-    fig = plt.figure(figsize=(18.0, 5.2))
+    fig = plt.figure(figsize=(19.0, 5.6))
     grid = fig.add_gridspec(
-        1, 4, width_ratios=[0.9, 1.1, 1.0, 1.0], wspace=0.30
+        1, 4, width_ratios=[0.9, 1.1, 1.1, 1.1], wspace=0.34
     )
     ax_a = fig.add_subplot(grid[0, 0])
     ax_b = fig.add_subplot(grid[0, 1])
@@ -361,12 +492,13 @@ def render_figure(
         position,
         crop_rank=crop_rank,
         grid_index=grid_index,
+        x_shift_frac=x_shift_frac,
     )
     plot_timeseries_panel(ax_b, timeseries_df)
     plot_onset_correlation_panel(ax_c, fit_df, onset_df)
     plot_lifetime_correlation_panel(ax_d, fit_df)
 
-    fig.subplots_adjust(left=0.04, right=0.985, top=0.90, bottom=0.12, wspace=0.30)
+    fig.subplots_adjust(left=0.04, right=0.985, top=0.90, bottom=0.14, wspace=0.34)
     add_panel_labels(fig, [ax_a, ax_b, ax_c, ax_d])
 
     output_png = output_png.resolve()
@@ -390,10 +522,9 @@ def main() -> None:
         help="Output PNG path (default: <workspace>/results/fig4_panels.png).",
     )
     parser.add_argument(
-        "--output-svg",
-        type=Path,
-        default=None,
-        help="Output SVG path (default: derived from --output with .svg suffix).",
+        "--svg-only",
+        action="store_true",
+        help="Write SVG only (skip PNG).",
     )
     parser.add_argument(
         "--pos",
@@ -417,6 +548,16 @@ def main() -> None:
         help="Panel a crop among equally dense regions (overrides --grid-index).",
     )
     parser.add_argument(
+        "--x-shift-frac",
+        type=float,
+        default=DEFAULT_X_SHIFT_FRAC,
+        help=(
+            "Shift panel a's grid-index crop x-origin right by this fraction "
+            f"of the crop width (default: {DEFAULT_X_SHIFT_FRAC}; ignored "
+            "when --crop-rank is set)."
+        ),
+    )
+    parser.add_argument(
         "--shuffle",
         action="store_true",
         help="Randomize panel a position and 1/3×1/3 crop region.",
@@ -435,10 +576,7 @@ def main() -> None:
         crop_rank = args.crop_rank
 
     output_png = args.output or (args.workspace / "results" / "fig4_panels.png")
-    if args.output_svg is not None:
-        output_svg = args.output_svg
-    else:
-        output_svg = output_png.with_suffix(".svg")
+    output_svg = output_png.with_suffix(".svg")
 
     png, svg = render_figure(
         args.workspace,
@@ -447,6 +585,7 @@ def main() -> None:
         position=position,
         crop_rank=crop_rank,
         grid_index=grid_index,
+        x_shift_frac=args.x_shift_frac,
         fit_csv=args.fit_csv,
         timeseries_csv=args.timeseries_csv,
     )
