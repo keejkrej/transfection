@@ -479,7 +479,7 @@ def render_figure(
 
     fig = plt.figure(figsize=(19.0, 5.6))
     grid = fig.add_gridspec(
-        1, 4, width_ratios=[0.9, 1.1, 1.1, 1.1], wspace=0.34
+        1, 4, width_ratios=[1.1, 1.1, 1.1, 1.1], wspace=0.34
     )
     ax_a = fig.add_subplot(grid[0, 0])
     ax_b = fig.add_subplot(grid[0, 1])
