@@ -15,6 +15,7 @@ corrected fluorescence reaches 0.5 * max(corrected) for that cell.
 from __future__ import annotations
 
 import argparse
+import json
 import random
 from pathlib import Path
 
@@ -42,7 +43,7 @@ BACKGROUND_TRACE_COLOR = "#808080"
 MARGINAL_HIST_FRAC = 0.22
 MARGINAL_HIST_PAD = 0.08
 MARGINAL_HIST_BINS = 18
-DEFAULT_POSITION = 3
+DEFAULT_POSITION = 121
 DEFAULT_GRID_INDEX = 0
 # Shifts the grid-index crop's x-origin right by this fraction of the crop
 # width. The unshifted upper-left third (grid_index=0) leaves a wide blank
@@ -52,7 +53,7 @@ DEFAULT_GRID_INDEX = 0
 # view instead, with no boxes clipped by the crop.
 DEFAULT_X_SHIFT_FRAC = 0.19
 DISPLAY_FRAME = 100
-AVAILABLE_POSITIONS = (1, 2, 3, 4, 5)
+AVAILABLE_POSITIONS = (121, 122, 123, 124, 125)
 
 
 def style_plot_axes(ax: plt.Axes) -> None:
@@ -127,6 +128,53 @@ def position_image_path(workspace: Path, pos: int, timepoint: int) -> Path:
 def load_bbox_table(workspace: Path, pos: int) -> pd.DataFrame:
     return pd.read_csv(workspace / "bbox" / f"Pos{pos}.csv")
 
+
+def _roi_plane(stack: np.ndarray, timepoint: int, channel: int) -> np.ndarray:
+    """Extract a 2D YX plane from an ROI stack (TCZYX, TCYX, or TYX)."""
+    arr = np.asarray(stack)
+    if arr.ndim == 5:  # T C Z Y X
+        t = min(timepoint, arr.shape[0] - 1)
+        c = min(channel, arr.shape[1] - 1)
+        return np.asarray(arr[t, c, 0], dtype=np.float32)
+    if arr.ndim == 4:  # T C Y X
+        t = min(timepoint, arr.shape[0] - 1)
+        c = min(channel, arr.shape[1] - 1)
+        return np.asarray(arr[t, c], dtype=np.float32)
+    if arr.ndim == 3:  # T Y X
+        t = min(timepoint, arr.shape[0] - 1)
+        return np.asarray(arr[t], dtype=np.float32)
+    if arr.ndim == 2:
+        return np.asarray(arr, dtype=np.float32)
+    raise ValueError(f"Unsupported ROI stack shape: {arr.shape}")
+
+
+def load_frame_from_rois(
+    workspace: Path, pos: int, timepoint: int, *, channel: int = SIGNAL_CHANNEL
+) -> np.ndarray:
+    """Composite a full field from roi/PosN crops when PosN tile TIFFs are absent."""
+    index_path = workspace / "roi" / f"Pos{pos}" / "index.json"
+    index = json.loads(index_path.read_text())
+    bbox_table = load_bbox_table(workspace, pos)
+    height = int((bbox_table["y"] + bbox_table["h"]).max())
+    width = int((bbox_table["x"] + bbox_table["w"]).max())
+    frame = np.zeros((height, width), dtype=np.float32)
+    roi_dir = workspace / "roi" / f"Pos{pos}"
+    for entry in index["rois"]:
+        bbox = entry["bbox"]
+        x0, y0, w, h = int(bbox["x"]), int(bbox["y"]), int(bbox["w"]), int(bbox["h"])
+        plane = _roi_plane(
+            tifffile.imread(roi_dir / entry["fileName"]), timepoint, channel
+        )
+        ph, pw = plane.shape
+        frame[y0 : y0 + min(h, ph), x0 : x0 + min(w, pw)] = plane[:h, :w]
+    return frame
+
+
+def load_position_frame(workspace: Path, pos: int, timepoint: int) -> np.ndarray:
+    image_path = position_image_path(workspace, pos, timepoint)
+    if image_path.is_file():
+        return np.asarray(tifffile.imread(image_path), dtype=np.float32)
+    return load_frame_from_rois(workspace, pos, timepoint)
 
 def bbox_count_in_crop(
     bbox_df: pd.DataFrame, x0: int, y0: int, crop_w: int, crop_h: int
@@ -250,8 +298,7 @@ def plot_position_tile(
     grid_index: int | None = None,
     x_shift_frac: float = 0.0,
 ) -> None:
-    image_path = position_image_path(workspace, pos, DISPLAY_FRAME)
-    frame = np.asarray(tifffile.imread(image_path), dtype=np.float32)
+    frame = load_position_frame(workspace, pos, DISPLAY_FRAME)
     bbox_table = load_bbox_table(workspace, pos)
     crop, x0, y0 = third_crop(
         frame,
@@ -474,6 +521,10 @@ def render_figure(
     ts_path = timeseries_csv or (workspace / "timeseries" / "sc0_ch1.csv")
     fit_df = pd.read_csv(fit_path)
     timeseries_df = pd.read_csv(ts_path)
+
+    # Restrict fit rows to cells present in the plotted timeseries sample.
+    ts_keys = timeseries_df[["pos", "roi"]].drop_duplicates()
+    fit_df = fit_df.merge(ts_keys, on=["pos", "roi"], how="inner")
 
     onset_df = compute_onset_minutes(timeseries_df)
 
